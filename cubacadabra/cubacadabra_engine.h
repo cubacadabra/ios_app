@@ -129,6 +129,9 @@ uint8_t engine_load_script_buffer(CubacadabraEngine *engine);
 const float *engine_snapshot_ptr(const CubacadabraEngine *engine);
 uintptr_t engine_snapshot_len(void);
 uintptr_t engine_snapshot_stride(void);
+float engine_camera_yaw(const CubacadabraEngine *engine);
+float engine_camera_pitch(const CubacadabraEngine *engine);
+float engine_camera_distance(const CubacadabraEngine *engine);
 uintptr_t engine_agent_count(const CubacadabraEngine *engine);
 uintptr_t engine_launch_pad_count(const CubacadabraEngine *engine);
 uintptr_t engine_launch_pad_occupants(const CubacadabraEngine *engine, uintptr_t index);
@@ -158,6 +161,7 @@ void engine_renderer_set_scene(
     CubacadabraRenderAgent player,
     float ground_size,
     CubacadabraRenderPalette palette,
+    const float *camera,
     float elapsed
 );
 void engine_renderer_draw(CubacadabraRenderer *renderer);

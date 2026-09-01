@@ -28,6 +28,7 @@ struct EngineFrame {
     var player: EnginePlayer
     var agents: [EngineAgent]
     var pads: [EnginePad]
+    var camera: SIMD3<Float>
     var playerLaunchPad: Int
     var launchEventID: UInt32
     var lastLaunchPad: Int
@@ -169,6 +170,11 @@ final class EngineBridge {
             player: player,
             agents: agents,
             pads: pads,
+            camera: SIMD3(
+                engine_camera_yaw(handle),
+                engine_camera_pitch(handle),
+                engine_camera_distance(handle)
+            ),
             playerLaunchPad: Int(engine_player_launch_pad(handle)),
             launchEventID: engine_launch_event_id(handle),
             lastLaunchPad: Int(engine_last_launch_pad(handle)),

@@ -8,6 +8,7 @@ struct GameRenderScene {
     let player: CubacadabraRenderAgent
     let groundSize: Float
     let palette: CubacadabraRenderPalette
+    let camera: SIMD3<Float>
     let elapsed: Float
 }
 
@@ -106,6 +107,7 @@ struct RustGameSurface: UIViewRepresentable {
                             scene.player,
                             scene.groundSize,
                             scene.palette,
+                            [scene.camera.x, scene.camera.y, scene.camera.z].withUnsafeBufferPointer { $0.baseAddress },
                             scene.elapsed
                         )
                     }
@@ -132,7 +134,7 @@ extension GameViewModel {
     func renderScene() -> GameRenderScene? {
         guard let world = world(), let frame else { return nil }
         let palette = CubacadabraRenderPalette(
-            sky: rgba("paper", in: world, fallback: "#101c22"),
+            sky: rgba("sky", in: world, fallback: "#9ab9be"),
             ground: rgba("ground", in: world, fallback: "#536e70"),
             ground_edge: rgba("groundEdge", in: world, fallback: "#2f4d52"),
             grid: rgba("grid", in: world, fallback: "#78999a"),
@@ -193,6 +195,7 @@ extension GameViewModel {
             player: player,
             groundSize: world.world.groundSize,
             palette: palette,
+            camera: frame.camera,
             elapsed: frame.elapsed
         )
     }
