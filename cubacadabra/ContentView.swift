@@ -34,7 +34,7 @@ final class GameViewModel: ObservableObject {
     private let loader = GamePackageLoader()
     private var engine: EngineBridge?
     private var lastTick: Date?
-    private var lastLaunchEventID: UInt32 = 0
+    private var runtimeWorldIDs: [String] = []
     private var forward: Float = 0
     private var strafe: Float = 0
     private var jumpQueued = false
@@ -53,13 +53,12 @@ final class GameViewModel: ObservableObject {
             }
             let loadedEngine = try EngineBridge()
             try loadedEngine.loadScript(script)
-            loadedEngine.configure(world: initialWorld)
+            runtimeWorldIDs = try loadedEngine.configure(package: loadedPackage)
             package = loadedPackage
             worldID = loadedPackage.startWorld
             engine = loadedEngine
             let initialFrame = loadedEngine.frame()
             frame = initialFrame
-            lastLaunchEventID = initialFrame.launchEventID
             lastTick = nil
             isLoading = false
         } catch {
@@ -76,7 +75,7 @@ final class GameViewModel: ObservableObject {
     }
 
     func tick(at date: Date) {
-        guard let engine, let previousFrame = frame else { return }
+        guard let engine, frame != nil else { return }
         guard let lastTick else {
             self.lastTick = date
             return
@@ -96,14 +95,14 @@ final class GameViewModel: ObservableObject {
         lookY = 0
         engine.step(delta)
         let nextFrame = engine.frame()
-        if worldID == "lobby",
-           nextFrame.launchEventID != lastLaunchEventID,
-           previousFrame.playerLaunchPad == nextFrame.lastLaunchPad {
-            enterWorld(from: nextFrame.lastLaunchPad)
-        } else {
-            lastLaunchEventID = nextFrame.launchEventID
-            frame = nextFrame
+        if let activeWorldID = runtimeWorldIDs[safe: nextFrame.activeWorldIndex],
+           activeWorldID != worldID {
+            worldID = activeWorldID
+            forward = 0
+            strafe = 0
+            sprinting = false
         }
+        frame = nextFrame
     }
 
     func setMove(strafe: Float, forward: Float) {
@@ -125,22 +124,6 @@ final class GameViewModel: ObservableObject {
         package?.worldDefinition(named: worldID)
     }
 
-    private func enterWorld(from launchPadIndex: Int) {
-        guard let package, let engine else { return }
-        let destinationID = package.launch.destinationWorld
-        guard let destination = package.worldDefinition(named: destinationID) else {
-            errorMessage = GamePackageError.missingWorld(destinationID).localizedDescription
-            return
-        }
-        _ = engine.enterSession(launchPadIndex: launchPadIndex, spawn: destination.world.spawn)
-        engine.configureObstacles(destination.blocks)
-        worldID = destinationID
-        frame = engine.frame()
-        lastLaunchEventID = frame?.launchEventID ?? 0
-        forward = 0
-        strafe = 0
-        sprinting = false
-    }
 }
 
 struct GameSurface: View {

@@ -120,6 +120,15 @@ struct RustGameSurface: UIViewRepresentable {
 }
 
 extension GameViewModel {
+    private static let npcPalettes: [(skin: String, shirt: String, pants: String)] = [
+        ("#f0b18a", "#e76f51", "#355070"),
+        ("#d99770", "#5f8f78", "#3e5974"),
+        ("#f4c39f", "#748bd2", "#43515e"),
+        ("#c98263", "#f0b54d", "#385c62"),
+        ("#e4a77b", "#b276a9", "#4b5e80"),
+        ("#f1c29b", "#3f8884", "#414b5b")
+    ]
+
     func renderScene() -> GameRenderScene? {
         guard let world = world(), let frame else { return nil }
         let palette = CubacadabraRenderPalette(
@@ -154,15 +163,28 @@ extension GameViewModel {
                 color: rgba(pad.color, in: world, fallback: "#ffffff")
             )
         }
-        let agents = frame.agents.map { agent in
-            CubacadabraRenderAgent(
+        let agents = frame.agents.enumerated().map { index, agent in
+            let colors = Self.npcPalettes[index % Self.npcPalettes.count]
+            return CubacadabraRenderAgent(
                 position: (agent.position.x, agent.position.y, agent.position.z),
-                color: rgba("paper", in: world, fallback: "#edf0e5")
+                yaw: agent.yaw,
+                walk_cycle: agent.walkCycle,
+                assembled: agent.assembled ? 1 : 0,
+                skin: rgba(colors.skin, in: world, fallback: "#e8ae86"),
+                shirt: rgba(colors.shirt, in: world, fallback: "#2d6663"),
+                pants: rgba(colors.pants, in: world, fallback: "#536a90"),
+                shoes: rgba("#293a43", in: world, fallback: "#293a43")
             )
         }
         let player = CubacadabraRenderAgent(
             position: (frame.player.position.x, frame.player.position.y, frame.player.position.z),
-            color: palette.ink
+            yaw: frame.player.yaw,
+            walk_cycle: frame.player.walkCycle,
+            assembled: 0,
+            skin: rgba("#e8ae86", in: world, fallback: "#e8ae86"),
+            shirt: rgba("#2d6663", in: world, fallback: "#2d6663"),
+            pants: rgba("#536a90", in: world, fallback: "#536a90"),
+            shoes: rgba("#293a43", in: world, fallback: "#293a43")
         )
         return GameRenderScene(
             blocks: blocks,

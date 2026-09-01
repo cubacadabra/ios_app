@@ -23,6 +23,13 @@ struct GamePackage: Decodable {
         }
         return worlds[id]
     }
+
+    func runtimeWorldEntries() -> [(id: String, definition: WorldDefinition)] {
+        let lobby = worldDefinition(named: "lobby").map { [(id: "lobby", definition: $0)] } ?? []
+        return lobby + worlds.keys.sorted().compactMap { id in
+            worlds[id].map { (id: id, definition: $0) }
+        }
+    }
 }
 
 struct LaunchRoute: Decodable {
@@ -75,6 +82,7 @@ struct LaunchPadDefinition: Decodable, Identifiable {
     let color: String
     let radius: Float
     let countdown: Float
+    let destinationWorld: String?
 }
 
 struct BlockDefinition: Decodable {
