@@ -1,0 +1,14 @@
+xcuserdata/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+timeline.xctimeline
+target
+Cargo.lock
+playground.xcworkspace
+.build/
+build/
+__pycache__/
+.env
+Gemfile.lock
