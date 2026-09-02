@@ -140,8 +140,36 @@ enum GamePackageError: LocalizedError {
     }
 }
 
+enum ClientConfiguration {
+    #if DEBUG
+    private static let defaultBackendURL = "ws://127.0.0.1:8787"
+    private static let defaultGameBaseURL = "http://127.0.0.1:5173/games/first-game/"
+    #else
+    private static let defaultBackendURL = "wss://cubacadabra.andrew-f97.workers.dev"
+    private static let defaultGameBaseURL = "https://cubacadabra.com/games/first-game/"
+    #endif
+
+    static var backendURL: URL {
+        configuredURL(forKey: "CUBACADABRA_BACKEND_URL", fallback: defaultBackendURL)
+    }
+
+    static var gameBaseURL: URL {
+        configuredURL(forKey: "CUBACADABRA_GAME_BASE_URL", fallback: defaultGameBaseURL)
+    }
+
+    private static func configuredURL(forKey key: String, fallback: String) -> URL {
+        if let configured = ProcessInfo.processInfo.environment[key],
+           let url = URL(string: configured),
+           url.scheme != nil,
+           url.host != nil {
+            return url
+        }
+        return URL(string: fallback)!
+    }
+}
+
 struct GamePackageLoader {
-    var baseURL = URL(string: "http://localhost:5173/games/first-game/")!
+    var baseURL = ClientConfiguration.gameBaseURL
 
     func load() async throws -> LoadedGamePackage {
         let manifestURL = baseURL.appendingPathComponent("manifest.json")

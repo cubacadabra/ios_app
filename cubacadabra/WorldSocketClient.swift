@@ -37,7 +37,7 @@ final class WorldSocketClient {
 
     let playerID: String
 
-    private let baseURL = URL(string: "wss://cubacadabra.andrew-f97.workers.dev")!
+    private let baseURL = ClientConfiguration.backendURL
     private let onStateChange: (WorldConnectionState) -> Void
     private let onEvent: (WorldPresenceEvent) -> Void
     private let onMove: (WorldMovementEvent) -> Void
