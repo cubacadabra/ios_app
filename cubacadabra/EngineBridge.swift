@@ -66,68 +66,37 @@ final class EngineBridge {
         }
     }
 
-    func configure(package: GamePackage) throws -> [String] {
-        let entries = package.runtimeWorldEntries()
-        let worldIndices = Dictionary(uniqueKeysWithValues: entries.enumerated().map { ($0.element.id, $0.offset) })
-        engine_set_world_count(handle, UInt(entries.count))
-
-        for (worldIndex, entry) in entries.enumerated() {
-            let world = entry.definition
-            engine_set_world_spawn(
-                handle,
-                UInt(worldIndex),
-                world.world.spawn[safe: 0] ?? 0,
-                world.world.spawn[safe: 1] ?? 0,
-                world.world.spawn[safe: 2] ?? 0
-            )
-            engine_set_world_launch_pad_count(handle, UInt(worldIndex), UInt(world.launchPads.count))
-            for (padIndex, pad) in world.launchPads.enumerated() {
-                engine_set_world_launch_pad(
-                    handle,
-                    UInt(worldIndex),
-                    UInt(padIndex),
-                    pad.position[safe: 0] ?? 0,
-                    pad.position[safe: 2] ?? pad.position[safe: 1] ?? 0,
-                    pad.radius,
-                    pad.countdown
-                )
-                let destinationID = pad.destinationWorld ?? (entry.id == "lobby" ? package.launch.destinationWorld : nil)
-                engine_set_world_launch_destination(
-                    handle,
-                    UInt(worldIndex),
-                    UInt(padIndex),
-                    Int32(destinationID.flatMap { worldIndices[$0] } ?? -1)
-                )
-            }
-            engine_set_world_obstacle_count(handle, UInt(worldIndex), UInt(world.blocks.count))
-            for (blockIndex, block) in world.blocks.enumerated() {
-                engine_set_world_obstacle(
-                    handle,
-                    UInt(worldIndex),
-                    UInt(blockIndex),
-                    block.position[safe: 0] ?? 0,
-                    block.position[safe: 1] ?? 0,
-                    block.position[safe: 2] ?? 0,
-                    block.size[safe: 0] ?? 0,
-                    block.size[safe: 1] ?? 0,
-                    block.size[safe: 2] ?? 0
-                )
-            }
+    func loadPackage(_ source: String) throws {
+        let bytes = Array(source.utf8)
+        let pointer = engine_package_buffer_ptr(handle, UInt(bytes.count))
+        guard let pointer else { throw EngineBridgeError.packageBufferFailed }
+        bytes.withUnsafeBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.baseAddress else { return }
+            pointer.update(from: baseAddress.assumingMemoryBound(to: UInt8.self), count: bytes.count)
         }
-
-        guard let startIndex = worldIndices[package.startWorld],
-              engine_start_world(handle, UInt(startIndex)) != 0 else {
-            throw EngineBridgeError.worldStartFailed(package.startWorld)
+        guard engine_load_package_buffer(handle) != 0 else {
+            throw EngineBridgeError.packageLoadFailed
         }
-        return entries.map(\.id)
     }
 
-    func setInput(forward: Float, strafe: Float, sprint: Bool, jump: Bool, lookX: Float = 0, lookY: Float = 0) {
-        engine_set_input(handle, forward, strafe, sprint ? 1 : 0, jump ? 1 : 0, lookX, lookY, 0)
+    func setInput(
+        forward: Float,
+        strafe: Float,
+        sprint: Bool,
+        jump: Bool,
+        lookX: Float = 0,
+        lookY: Float = 0,
+        zoomDelta: Float = 0
+    ) {
+        engine_set_input(handle, forward, strafe, sprint ? 1 : 0, jump ? 1 : 0, lookX, lookY, zoomDelta)
     }
 
     func step(_ delta: Float) {
         engine_step(handle, delta)
+    }
+
+    func sync(renderer: OpaquePointer) {
+        engine_renderer_sync(renderer, handle)
     }
 
     func frame() -> EngineFrame {
@@ -191,14 +160,16 @@ enum EngineBridgeError: LocalizedError {
     case creationFailed
     case scriptBufferFailed
     case scriptLoadFailed
-    case worldStartFailed(String)
+    case packageBufferFailed
+    case packageLoadFailed
 
     var errorDescription: String? {
         switch self {
         case .creationFailed: return "The Rust game engine could not be created."
         case .scriptBufferFailed: return "The Rust game engine could not receive the game script."
         case .scriptLoadFailed: return "The Luau game script could not be loaded."
-        case .worldStartFailed(let id): return "The Rust game engine could not start world \"\(id)\"."
+        case .packageBufferFailed: return "The Rust game engine could not receive the game manifest."
+        case .packageLoadFailed: return "The Rust game engine could not load the game manifest."
         }
     }
 }

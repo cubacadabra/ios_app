@@ -143,19 +143,22 @@ enum GamePackageError: LocalizedError {
 struct GamePackageLoader {
     var baseURL = URL(string: "http://localhost:5173/games/first-game/")!
 
-    func load() async throws -> (GamePackage, String) {
+    func load() async throws -> LoadedGamePackage {
         let manifestURL = baseURL.appendingPathComponent("manifest.json")
         let scriptURL = baseURL.appendingPathComponent("game.luau")
         async let manifestData = fetch(manifestURL)
         async let scriptData = fetch(scriptURL)
-        let package = try JSONDecoder().decode(GamePackage.self, from: try await manifestData)
-        guard let script = String(data: try await scriptData, encoding: .utf8) else {
+        let loadedManifestData = try await manifestData
+        let loadedScriptData = try await scriptData
+        let package = try JSONDecoder().decode(GamePackage.self, from: loadedManifestData)
+        guard let manifest = String(data: loadedManifestData, encoding: .utf8),
+              let script = String(data: loadedScriptData, encoding: .utf8) else {
             throw GamePackageError.invalidScript
         }
         guard package.worldDefinition(named: package.startWorld) != nil else {
             throw GamePackageError.missingWorld(package.startWorld)
         }
-        return (package, script)
+        return LoadedGamePackage(package: package, manifest: manifest, script: script)
     }
 
     private func fetch(_ url: URL) async throws -> Data {
@@ -165,6 +168,12 @@ struct GamePackageLoader {
         }
         return data
     }
+}
+
+struct LoadedGamePackage {
+    let package: GamePackage
+    let manifest: String
+    let script: String
 }
 
 extension Color {

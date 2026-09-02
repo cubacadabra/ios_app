@@ -40,20 +40,24 @@ final class GameViewModel: ObservableObject {
     private var jumpQueued = false
     private var lookX: Float = 0
     private var lookY: Float = 0
+    private var zoomDelta: Float = 0
     private var lastLookTranslation = CGSize.zero
+    private var lastMagnification: CGFloat = 1
 
     func load() async {
         guard engine == nil else { return }
         isLoading = true
         errorMessage = nil
         do {
-            let (loadedPackage, script) = try await loader.load()
-            guard let initialWorld = loadedPackage.worldDefinition(named: loadedPackage.startWorld) else {
+            let loaded = try await loader.load()
+            let loadedPackage = loaded.package
+            guard loadedPackage.worldDefinition(named: loadedPackage.startWorld) != nil else {
                 throw GamePackageError.missingWorld(loadedPackage.startWorld)
             }
             let loadedEngine = try EngineBridge()
-            try loadedEngine.loadScript(script)
-            runtimeWorldIDs = try loadedEngine.configure(package: loadedPackage)
+            try loadedEngine.loadPackage(loaded.manifest)
+            try loadedEngine.loadScript(loaded.script)
+            runtimeWorldIDs = loadedPackage.runtimeWorldEntries().map(\.id)
             package = loadedPackage
             worldID = loadedPackage.startWorld
             engine = loadedEngine
@@ -88,11 +92,13 @@ final class GameViewModel: ObservableObject {
             sprint: sprinting,
             jump: jumpQueued,
             lookX: lookX,
-            lookY: lookY
+            lookY: lookY,
+            zoomDelta: zoomDelta
         )
         jumpQueued = false
         lookX = 0
         lookY = 0
+        zoomDelta = 0
         engine.step(delta)
         let nextFrame = engine.frame()
         if let activeWorldID = runtimeWorldIDs[safe: nextFrame.activeWorldIndex],
@@ -120,9 +126,19 @@ final class GameViewModel: ObservableObject {
 
     func lookEnded() { lastLookTranslation = .zero }
 
+    func zoomChanged(to magnification: CGFloat) {
+        let change = magnification - lastMagnification
+        zoomDelta -= Float(change * 8)
+        lastMagnification = magnification
+    }
+
+    func zoomEnded() { lastMagnification = 1 }
+
     func world() -> WorldDefinition? {
         package?.worldDefinition(named: worldID)
     }
+
+    var renderEngine: EngineBridge? { engine }
 
 }
 
@@ -131,13 +147,18 @@ struct GameSurface: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            if let scene = model.renderScene() {
-                RustGameSurface(scene: scene, isActive: true)
+            if let engine = model.renderEngine {
+                RustGameSurface(engine: engine, isActive: true)
                     .ignoresSafeArea()
                     .gesture(
                         DragGesture(minimumDistance: 4)
                             .onChanged { value in model.lookChanged(to: value.translation) }
                             .onEnded { _ in model.lookEnded() }
+                    )
+                    .simultaneousGesture(
+                        MagnificationGesture()
+                            .onChanged { value in model.zoomChanged(to: value) }
+                            .onEnded { _ in model.zoomEnded() }
                     )
             }
             VStack(alignment: .leading, spacing: 0) {
