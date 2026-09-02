@@ -44,6 +44,7 @@ struct EngineFrame {
     var worldEventID: UInt32
     var lastWorldSourcePad: Int
     var lastWorldDestination: Int
+    var settingsRoomState: UInt8
 }
 
 final class EngineBridge {
@@ -174,7 +175,8 @@ final class EngineBridge {
             activeWorldIndex: Int(engine_active_world(handle)),
             worldEventID: engine_world_event_id(handle),
             lastWorldSourcePad: Int(engine_last_world_source_pad(handle)),
-            lastWorldDestination: Int(engine_last_world_destination(handle))
+            lastWorldDestination: Int(engine_last_world_destination(handle)),
+            settingsRoomState: engine_settings_room_state(handle)
         )
     }
 }

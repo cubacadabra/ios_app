@@ -19,6 +19,13 @@ enum WorldConnectionState: Equatable {
 struct WorldPresenceEvent {
     let type: String
     let playerID: String
+    let username: String?
+}
+
+struct WorldUsernameEvent {
+    let type: String
+    let username: String?
+    let code: String?
 }
 
 struct WorldMovementEvent {
@@ -36,11 +43,13 @@ final class WorldSocketClient {
     fileprivate static let moveYawEpsilon: Float = 0.01
 
     let playerID: String
+    private(set) var username: String
 
     private let baseURL = ClientConfiguration.backendURL
     private let onStateChange: (WorldConnectionState) -> Void
     private let onEvent: (WorldPresenceEvent) -> Void
     private let onMove: (WorldMovementEvent) -> Void
+    private let onUsername: (WorldUsernameEvent) -> Void
     private var socketTask: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var reconnectTask: Task<Void, Never>?
@@ -50,16 +59,21 @@ final class WorldSocketClient {
     private var stopped = true
     private var lastMoveSentAt = Date.distantPast.timeIntervalSinceReferenceDate
     private var lastSentMove: SentMove?
+    private var pendingUsername: String
 
     init(
         onStateChange: @escaping (WorldConnectionState) -> Void,
         onEvent: @escaping (WorldPresenceEvent) -> Void,
-        onMove: @escaping (WorldMovementEvent) -> Void
+        onMove: @escaping (WorldMovementEvent) -> Void,
+        onUsername: @escaping (WorldUsernameEvent) -> Void
     ) {
         playerID = Self.loadPlayerID()
+        username = Self.loadUsername(for: playerID)
+        pendingUsername = username
         self.onStateChange = onStateChange
         self.onEvent = onEvent
         self.onMove = onMove
+        self.onUsername = onUsername
     }
 
     func connect(worldID nextWorldID: String) {
@@ -113,6 +127,7 @@ final class WorldSocketClient {
         lastMoveSentAt = Date.distantPast.timeIntervalSinceReferenceDate
         lastSentMove = nil
         nextSocket.resume()
+        sendUsername(pendingUsername, on: nextSocket)
         receiveTask = Task { [weak self] in
             await self?.receiveMessages(from: nextSocket, generation: expectedGeneration)
         }
@@ -151,6 +166,17 @@ final class WorldSocketClient {
         }
 
         guard let event = try? JSONDecoder().decode(WorldEventEnvelope.self, from: data) else { return }
+        if event.type == "username_updated" || event.type == "username_error" {
+        if event.type == "username_updated", let nextUsername = event.username {
+            username = nextUsername
+            pendingUsername = nextUsername
+            UserDefaults.standard.set(nextUsername, forKey: "cubacadabra.username")
+        } else if event.type == "username_error" {
+            pendingUsername = username
+            }
+            onUsername(WorldUsernameEvent(type: event.type, username: event.username, code: event.code))
+            return
+        }
         if event.type == "move" {
             guard let eventPlayerID = event.id,
                   eventPlayerID != playerID,
@@ -167,10 +193,34 @@ final class WorldSocketClient {
             ))
             return
         }
-        guard event.type == "player_join" || event.type == "player_leave",
+        guard event.type == "player_join" || event.type == "player_leave" || event.type == "player_name",
               let eventPlayerID = event.id,
               eventPlayerID != playerID else { return }
-        onEvent(WorldPresenceEvent(type: event.type, playerID: eventPlayerID))
+        onEvent(WorldPresenceEvent(type: event.type, playerID: eventPlayerID, username: event.username))
+    }
+
+    func setUsername(_ nextUsername: String) {
+        let trimmed = nextUsername
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+        guard trimmed.count >= 2, trimmed.count <= 24 else {
+            onUsername(WorldUsernameEvent(type: "username_error", username: nil, code: "invalid_username"))
+            return
+        }
+        guard trimmed.range(of: "^[A-Za-z0-9 _-]+$", options: .regularExpression) != nil else {
+            onUsername(WorldUsernameEvent(type: "username_error", username: nil, code: "invalid_username"))
+            return
+        }
+        pendingUsername = trimmed
+        sendUsername(trimmed, on: socketTask)
+    }
+
+    private func sendUsername(_ value: String, on task: URLSessionWebSocketTask?) {
+        guard !stopped, let task, task.state == .running else { return }
+        let message = WorldUsernameMessage(username: value)
+        guard let data = try? JSONEncoder().encode(message),
+              let text = String(data: data, encoding: .utf8) else { return }
+        task.send(.string(text)) { _ in }
     }
 
     func sendMove(
@@ -249,6 +299,16 @@ final class WorldSocketClient {
         UserDefaults.standard.set(playerID, forKey: key)
         return playerID
     }
+
+    private static func loadUsername(for playerID: String) -> String {
+        let fallback = "iOS Player \(String(playerID.suffix(4)).uppercased())"
+        let key = "cubacadabra.username"
+        guard let stored = UserDefaults.standard.string(forKey: key),
+              !stored.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return fallback
+        }
+        return stored
+    }
 }
 
 private struct SentMove {
@@ -276,6 +336,8 @@ private struct WorldEventEnvelope: Decodable {
     let yaw: Float?
     let moving: Bool?
     let sprinting: Bool?
+    let username: String?
+    let code: String?
 }
 
 private struct WorldMoveMessage: Encodable {
@@ -286,4 +348,9 @@ private struct WorldMoveMessage: Encodable {
     let yaw: Float
     let moving: Bool
     let sprinting: Bool
+}
+
+private struct WorldUsernameMessage: Encodable {
+    let type = "set_username"
+    let username: String
 }
