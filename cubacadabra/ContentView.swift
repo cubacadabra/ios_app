@@ -161,6 +161,7 @@ struct GameSurface: View {
                             .onEnded { _ in model.zoomEnded() }
                     )
             }
+            GameAtmosphere(isSession: model.worldID != "lobby")
             VStack(alignment: .leading, spacing: 0) {
                 GameHeader(model: model)
                     .padding(.horizontal, 20)
@@ -173,6 +174,67 @@ struct GameSurface: View {
             .ignoresSafeArea(edges: .bottom)
         }
         .background(Color.black)
+    }
+}
+
+private struct GameAtmosphere: View {
+    let isSession: Bool
+
+    private var topTint: Color {
+        isSession
+            ? Color(red: 8 / 255, green: 24 / 255, blue: 36 / 255)
+            : Color(red: 15 / 255, green: 53 / 255, blue: 63 / 255)
+    }
+
+    private var bottomTint: Color {
+        isSession
+            ? Color(red: 5 / 255, green: 24 / 255, blue: 29 / 255)
+            : Color(red: 14 / 255, green: 39 / 255, blue: 40 / 255)
+    }
+
+    private var vignetteTint: Color {
+        isSession
+            ? Color(red: 8 / 255, green: 27 / 255, blue: 35 / 255)
+            : Color(red: 32 / 255, green: 57 / 255, blue: 55 / 255)
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack {
+                LinearGradient(
+                    colors: [
+                        topTint.opacity(isSession ? 0.32 : 0.18),
+                        .clear,
+                    ],
+                    startPoint: .top,
+                    endPoint: UnitPoint(x: 0.5, y: isSession ? 0.24 : 0.20)
+                )
+                LinearGradient(
+                    colors: [
+                        bottomTint.opacity(isSession ? 0.30 : 0.22),
+                        .clear,
+                    ],
+                    startPoint: .bottom,
+                    endPoint: UnitPoint(x: 0.5, y: isSession ? 0.34 : 0.30)
+                )
+                RadialGradient(
+                    stops: [
+                        .init(color: .clear, location: 0.23),
+                        .init(
+                            color: vignetteTint.opacity(isSession ? 0.18 : 0.10),
+                            location: 1
+                        ),
+                    ],
+                    center: UnitPoint(x: 0.53, y: 0.39),
+                    startRadius: 0,
+                    endRadius: max(proxy.size.width, proxy.size.height) * 0.72
+                )
+            }
+            .compositingGroup()
+            .blendMode(.multiply)
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
     }
 }
 
