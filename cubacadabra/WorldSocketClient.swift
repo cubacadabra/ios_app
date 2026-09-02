@@ -31,6 +31,10 @@ struct WorldMovementEvent {
 
 @MainActor
 final class WorldSocketClient {
+    fileprivate static let moveSendInterval: TimeInterval = 1.0 / 12.0
+    fileprivate static let movePositionEpsilon: Float = 0.01
+    fileprivate static let moveYawEpsilon: Float = 0.01
+
     let playerID: String
 
     private let baseURL = URL(string: "wss://cubacadabra.andrew-f97.workers.dev")!
@@ -45,6 +49,7 @@ final class WorldSocketClient {
     private var reconnectAttempt = 0
     private var stopped = true
     private var lastMoveSentAt = Date.distantPast.timeIntervalSinceReferenceDate
+    private var lastSentMove: SentMove?
 
     init(
         onStateChange: @escaping (WorldConnectionState) -> Void,
@@ -67,6 +72,7 @@ final class WorldSocketClient {
         worldID = normalizedWorldID
         reconnectAttempt = 0
         lastMoveSentAt = Date.distantPast.timeIntervalSinceReferenceDate
+        lastSentMove = nil
         stopped = false
         openSocket(generation: generation)
     }
@@ -104,6 +110,8 @@ final class WorldSocketClient {
 
         let nextSocket = URLSession.shared.webSocketTask(with: url)
         socketTask = nextSocket
+        lastMoveSentAt = Date.distantPast.timeIntervalSinceReferenceDate
+        lastSentMove = nil
         nextSocket.resume()
         receiveTask = Task { [weak self] in
             await self?.receiveMessages(from: nextSocket, generation: expectedGeneration)
@@ -174,8 +182,20 @@ final class WorldSocketClient {
         guard !stopped,
               let socketTask,
               socketTask.state == .running else { return }
+
+        let move = SentMove(
+            position: position,
+            yaw: yaw,
+            moving: moving,
+            sprinting: sprinting
+        )
+        if let lastSentMove,
+           !move.isMeaningfullyDifferent(from: lastSentMove) {
+            return
+        }
+
         let now = Date().timeIntervalSinceReferenceDate
-        guard now - lastMoveSentAt >= 0.05 else { return }
+        guard now - lastMoveSentAt >= Self.moveSendInterval else { return }
         let message = WorldMoveMessage(
             x: position.x,
             y: position.y,
@@ -188,6 +208,7 @@ final class WorldSocketClient {
               let text = String(data: data, encoding: .utf8) else { return }
         socketTask.send(.string(text)) { _ in }
         lastMoveSentAt = now
+        lastSentMove = move
     }
 
     private func scheduleReconnect(generation expectedGeneration: Int) {
@@ -227,6 +248,22 @@ final class WorldSocketClient {
         let playerID = "ios-\(UUID().uuidString.lowercased())"
         UserDefaults.standard.set(playerID, forKey: key)
         return playerID
+    }
+}
+
+private struct SentMove {
+    let position: SIMD3<Float>
+    let yaw: Float
+    let moving: Bool
+    let sprinting: Bool
+
+    func isMeaningfullyDifferent(from previous: SentMove) -> Bool {
+        moving != previous.moving
+            || sprinting != previous.sprinting
+            || abs(position.x - previous.position.x) > WorldSocketClient.movePositionEpsilon
+            || abs(position.y - previous.position.y) > WorldSocketClient.movePositionEpsilon
+            || abs(position.z - previous.position.z) > WorldSocketClient.movePositionEpsilon
+            || abs(yaw - previous.yaw) > WorldSocketClient.moveYawEpsilon
     }
 }
 
