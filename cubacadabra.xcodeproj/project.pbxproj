@@ -291,7 +291,7 @@
 					"@executable_path/Frameworks",
 				);
 				LIBRARY_SEARCH_PATHS = "$(DERIVED_FILE_DIR)/cubacadabra-engine";
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.1;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-lcubacadabra_engine",
@@ -339,7 +339,7 @@
 					"@executable_path/Frameworks",
 				);
 				LIBRARY_SEARCH_PATHS = "$(DERIVED_FILE_DIR)/cubacadabra-engine";
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.1;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-lcubacadabra_engine",
