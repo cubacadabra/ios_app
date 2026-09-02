@@ -141,9 +141,9 @@ enum GamePackageError: LocalizedError {
 }
 
 enum ClientConfiguration {
-    #if DEBUG
-    private static let defaultBackendURL = "ws://127.0.0.1:8787"
-    private static let defaultGameBaseURL = "http://127.0.0.1:5173/games/first-game/"
+#if DEBUG
+    private static let defaultBackendURL = "ws://localhost:8787"
+    private static let defaultGameBaseURL = "http://localhost:5173/games/first-game/"
     #else
     private static let defaultBackendURL = "wss://cubacadabra.andrew-f97.workers.dev"
     private static let defaultGameBaseURL = "https://cubacadabra.com/games/first-game/"

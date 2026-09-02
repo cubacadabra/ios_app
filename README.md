@@ -39,8 +39,8 @@ Open `ios_app/cubacadabra.xcodeproj` in Xcode, select the shared `cubacadabra`
 scheme, choose an iOS Simulator, and Run. The Debug build defaults to:
 
 ```text
-Game package: http://127.0.0.1:5173/games/first-game/
-Backend:      ws://127.0.0.1:8787
+Game package: http://localhost:5173/games/first-game/
+Backend:      ws://localhost:8787
 ```
 
 The Xcode build phase compiles the sibling Rust crate for the selected iOS
