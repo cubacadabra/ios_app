@@ -11,10 +11,9 @@ struct RustGameSurface: UIViewRepresentable {
 
     func makeUIView(context: Context) -> MTKView {
         let view = MTKView(frame: .zero, device: MTLCreateSystemDefaultDevice())
-        // Keep the drawable in the same color space selected by the shared
-        // renderer. Without this, iOS can present the linear surface as a
-        // brighter, lower-contrast image than the browser client.
-        view.colorPixelFormat = .bgra8Unorm_srgb
+        // Match the native renderer's unorm surface so palette hex values are
+        // presented with the same contrast as the browser client.
+        view.colorPixelFormat = .bgra8Unorm
         view.framebufferOnly = true
         view.preferredFramesPerSecond = 60
         view.enableSetNeedsDisplay = false
