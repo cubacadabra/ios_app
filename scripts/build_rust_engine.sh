@@ -31,7 +31,9 @@ case "${PLATFORM_NAME:-iphonesimulator}" in
   iphoneos) rust_targets="aarch64-apple-ios" ;;
   iphonesimulator)
     rust_targets=""
-    case " ${ARCHS:-arm64} " in *" arm64 "*) rust_targets="$rust_targets aarch64-apple-ios-sim" ;; esac
+    # Xcode can report arm64e for some Release/archive configurations. Rust's
+    # arm64 simulator target produces the compatible aarch64 library for both.
+    case " ${ARCHS:-arm64} " in *" arm64 "*|*" arm64e "*) rust_targets="$rust_targets aarch64-apple-ios-sim" ;; esac
     case " ${ARCHS:-arm64} " in *" x86_64 "*) rust_targets="$rust_targets x86_64-apple-ios" ;; esac
     ;;
   *) echo "Unsupported Rust platform: ${PLATFORM_NAME:-unknown}" >&2; exit 1 ;;
@@ -47,7 +49,10 @@ for rust_target in $rust_targets; do
 done
 
 set -- $libraries
-if [ "$#" -eq 1 ]; then
+if [ "$#" -eq 0 ]; then
+  echo "No Rust library was built for PLATFORM_NAME=${PLATFORM_NAME:-unknown}, ARCHS=${ARCHS:-unknown}." >&2
+  exit 1
+elif [ "$#" -eq 1 ]; then
   cp "$1" "$output_dir/libcubacadabra_engine.a"
 else
   lipo -create "$@" -output "$output_dir/libcubacadabra_engine.a"
