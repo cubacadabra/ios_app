@@ -9,6 +9,13 @@ struct EnginePlayer {
     var sprinting: Bool
 }
 
+struct EngineRemotePlayer {
+    var position: SIMD3<Float>
+    var yaw: Float
+    var moving: Bool
+    var sprinting: Bool
+}
+
 struct EngineAgent {
     var position: SIMD3<Float>
     var yaw: Float
@@ -89,6 +96,22 @@ final class EngineBridge {
         zoomDelta: Float = 0
     ) {
         engine_set_input(handle, forward, strafe, sprint ? 1 : 0, jump ? 1 : 0, lookX, lookY, zoomDelta)
+    }
+
+    func setRemotePlayers(_ players: [EngineRemotePlayer]) {
+        engine_set_remote_player_count(handle, UInt(players.count))
+        for (index, player) in players.enumerated() {
+            engine_set_remote_player(
+                handle,
+                UInt(index),
+                player.position.x,
+                player.position.y,
+                player.position.z,
+                player.yaw,
+                player.moving ? 1 : 0,
+                player.sprinting ? 1 : 0
+            )
+        }
     }
 
     func step(_ delta: Float) {

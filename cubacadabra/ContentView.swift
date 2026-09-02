@@ -47,12 +47,16 @@ final class GameViewModel: ObservableObject {
     private var lastLookTranslation = CGSize.zero
     private var lastMagnification: CGFloat = 1
     private var noticeTask: Task<Void, Never>?
+    private var remotePlayers: [String: EngineRemotePlayer] = [:]
     private lazy var worldSocket = WorldSocketClient(
         onStateChange: { [weak self] state in
             self?.connectionState = state
         },
         onEvent: { [weak self] event in
-            self?.showPresenceEvent(event)
+            self?.handlePresenceEvent(event)
+        },
+        onMove: { [weak self] event in
+            self?.handleMovementEvent(event)
         }
     )
 
@@ -103,6 +107,7 @@ final class GameViewModel: ObservableObject {
         }
         let delta = Float(min(max(date.timeIntervalSince(lastTick), 0), 0.05))
         self.lastTick = date
+        engine.setRemotePlayers(remotePlayers.keys.sorted().compactMap { remotePlayers[$0] })
         engine.setInput(
             forward: forward,
             strafe: strafe,
@@ -124,9 +129,17 @@ final class GameViewModel: ObservableObject {
             forward = 0
             strafe = 0
             sprinting = false
+            remotePlayers.removeAll()
+            engine.setRemotePlayers([])
             worldSocket.connect(worldID: activeWorldID)
         }
         frame = nextFrame
+        worldSocket.sendMove(
+            position: nextFrame.player.position,
+            yaw: nextFrame.player.yaw,
+            moving: nextFrame.player.moving,
+            sprinting: nextFrame.player.sprinting
+        )
     }
 
     func setMove(strafe: Float, forward: Float) {
@@ -160,6 +173,22 @@ final class GameViewModel: ObservableObject {
 
     func disconnect() {
         worldSocket.disconnect()
+    }
+
+    private func handlePresenceEvent(_ event: WorldPresenceEvent) {
+        if event.type == "player_leave" {
+            remotePlayers.removeValue(forKey: event.playerID)
+        }
+        showPresenceEvent(event)
+    }
+
+    private func handleMovementEvent(_ event: WorldMovementEvent) {
+        remotePlayers[event.playerID] = EngineRemotePlayer(
+            position: event.position,
+            yaw: event.yaw,
+            moving: event.moving,
+            sprinting: event.sprinting
+        )
     }
 
     private func showPresenceEvent(_ event: WorldPresenceEvent) {
