@@ -31,24 +31,21 @@ case "${PLATFORM_NAME:-iphonesimulator}" in
   iphoneos) rust_targets="aarch64-apple-ios" ;;
   iphonesimulator)
     rust_targets=""
-    # Xcode can report arm64e for some Release/archive configurations. Rust's
-    # arm64 simulator target produces the compatible aarch64 library for both.
-    case " ${ARCHS:-arm64} " in *" arm64 "*|*" arm64e "*) rust_targets="$rust_targets aarch64-apple-ios-sim" ;; esac
+    case " ${ARCHS:-arm64} " in *" arm64 "*) rust_targets="$rust_targets aarch64-apple-ios-sim" ;; esac
     case " ${ARCHS:-arm64} " in *" x86_64 "*) rust_targets="$rust_targets x86_64-apple-ios" ;; esac
     ;;
   *) echo "Unsupported Rust platform: ${PLATFORM_NAME:-unknown}" >&2; exit 1 ;;
 esac
 
-libraries=""
+set --
 for rust_target in $rust_targets; do
   if ! $rustc_command --print target-libdir --target "$rust_target" >/dev/null 2>&1; then
     rustup target add "$rust_target"
   fi
   CARGO_TARGET_DIR="$cargo_target_dir" $cargo_command build --manifest-path "$manifest_path" --target "$rust_target" --release
-  libraries="$libraries $cargo_target_dir/$rust_target/release/libcubacadabra_engine.a"
+  set -- "$@" "$cargo_target_dir/$rust_target/release/libcubacadabra_engine.a"
 done
 
-set -- $libraries
 if [ "$#" -eq 0 ]; then
   echo "No Rust library was built for PLATFORM_NAME=${PLATFORM_NAME:-unknown}, ARCHS=${ARCHS:-unknown}." >&2
   exit 1
