@@ -19,6 +19,7 @@ struct ContentView: View {
         .preferredColorScheme(.dark)
         .task { await model.load() }
         .onReceive(tick) { date in model.tick(at: date) }
+        .onDisappear { model.disconnect() }
     }
 }
 
@@ -29,6 +30,8 @@ final class GameViewModel: ObservableObject {
     @Published private(set) var frame: EngineFrame?
     @Published private(set) var isLoading = true
     @Published private(set) var errorMessage: String?
+    @Published private(set) var connectionState = WorldConnectionState.disconnected
+    @Published private(set) var presenceNotice: PresenceNotice?
     @Published var sprinting = false
 
     private let loader = GamePackageLoader()
@@ -43,9 +46,21 @@ final class GameViewModel: ObservableObject {
     private var zoomDelta: Float = 0
     private var lastLookTranslation = CGSize.zero
     private var lastMagnification: CGFloat = 1
+    private var noticeTask: Task<Void, Never>?
+    private lazy var worldSocket = WorldSocketClient(
+        onStateChange: { [weak self] state in
+            self?.connectionState = state
+        },
+        onEvent: { [weak self] event in
+            self?.showPresenceEvent(event)
+        }
+    )
 
     func load() async {
-        guard engine == nil else { return }
+        guard engine == nil else {
+            worldSocket.connect(worldID: worldID)
+            return
+        }
         isLoading = true
         errorMessage = nil
         do {
@@ -65,6 +80,7 @@ final class GameViewModel: ObservableObject {
             frame = initialFrame
             lastTick = nil
             isLoading = false
+            worldSocket.connect(worldID: worldID)
         } catch {
             isLoading = false
             errorMessage = error.localizedDescription
@@ -72,6 +88,7 @@ final class GameViewModel: ObservableObject {
     }
 
     func retry() {
+        worldSocket.disconnect()
         engine = nil
         package = nil
         frame = nil
@@ -107,6 +124,7 @@ final class GameViewModel: ObservableObject {
             forward = 0
             strafe = 0
             sprinting = false
+            worldSocket.connect(worldID: activeWorldID)
         }
         frame = nextFrame
     }
@@ -140,6 +158,41 @@ final class GameViewModel: ObservableObject {
 
     var renderEngine: EngineBridge? { engine }
 
+    func disconnect() {
+        worldSocket.disconnect()
+    }
+
+    private func showPresenceEvent(_ event: WorldPresenceEvent) {
+        let platform: String
+        if event.playerID.hasPrefix("ios-") {
+            platform = "iOS"
+        } else if event.playerID.hasPrefix("web-") {
+            platform = "Web"
+        } else {
+            platform = "Player"
+        }
+        let shortID = String(event.playerID.suffix(4)).uppercased()
+        let action = event.type == "player_join" ? "joined the world" : "left the world"
+        let notice = PresenceNotice(
+            message: "\(platform) player \(shortID) \(action)",
+            joined: event.type == "player_join"
+        )
+        presenceNotice = notice
+
+        noticeTask?.cancel()
+        noticeTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled, self?.presenceNotice?.id == notice.id else { return }
+            self?.presenceNotice = nil
+        }
+    }
+
+}
+
+struct PresenceNotice: Identifiable, Equatable {
+    let id = UUID()
+    let message: String
+    let joined: Bool
 }
 
 struct GameSurface: View {
@@ -166,12 +219,19 @@ struct GameSurface: View {
                 GameHeader(model: model)
                     .padding(.horizontal, 20)
                     .padding(.top, 18)
+                if let notice = model.presenceNotice {
+                    PresenceNoticeView(notice: notice)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 10)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
                 Spacer()
                 GameControls(model: model)
                     .padding(.horizontal, 20)
                     .padding(.bottom, 18)
             }
             .ignoresSafeArea(edges: .bottom)
+            .animation(.easeOut(duration: 0.22), value: model.presenceNotice)
         }
         .background(Color.black)
     }
@@ -266,6 +326,17 @@ struct GameHeader: View {
                     Text("\((model.frame?.agents.count ?? 0) + 1) PLAYERS")
                         .font(.system(size: 15, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(connectionColor)
+                            .frame(width: 7, height: 7)
+                        Text(model.connectionState.label)
+                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                            .tracking(0.9)
+                            .foregroundStyle(.white.opacity(0.68))
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Cloud connection \(model.connectionState.label.lowercased())")
                 }
             }
             if model.worldID == "lobby" {
@@ -297,6 +368,38 @@ struct GameHeader: View {
         if pad.phase == 2 { return "LAUNCHING" }
         if pad.seconds > 0 { return String(format: "%.1fs · %d", pad.seconds, pad.occupants) }
         return pad.occupants == 0 ? "WAITING" : "ASSEMBLING"
+    }
+
+    private var connectionColor: Color {
+        switch model.connectionState {
+        case .connected: return Color(red: 0.39, green: 0.68, blue: 0.45)
+        case .connecting, .reconnecting: return Color(red: 0.88, green: 0.72, blue: 0.29)
+        case .disconnected: return Color(red: 0.76, green: 0.37, blue: 0.34)
+        }
+    }
+}
+
+private struct PresenceNoticeView: View {
+    let notice: PresenceNotice
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: notice.joined ? "person.badge.plus" : "person.badge.minus")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(notice.joined ? Color.green : Color.orange)
+            Text(notice.message)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 44)
+        .background(.regularMaterial, in: Capsule())
+        .overlay(Capsule().stroke(.primary.opacity(0.12), lineWidth: 1))
+        .frame(maxWidth: 390)
+        .frame(maxWidth: .infinity)
+        .accessibilityLabel(notice.message)
     }
 }
 
