@@ -60,6 +60,7 @@ final class WorldSocketClient {
     private var lastMoveSentAt = Date.distantPast.timeIntervalSinceReferenceDate
     private var lastSentMove: SentMove?
     private var pendingUsername: String
+    private var hidden = false
 
     init(
         onStateChange: @escaping (WorldConnectionState) -> Void,
@@ -128,6 +129,7 @@ final class WorldSocketClient {
         lastSentMove = nil
         nextSocket.resume()
         sendUsername(pendingUsername, on: nextSocket)
+        sendVisibility(on: nextSocket)
         receiveTask = Task { [weak self] in
             await self?.receiveMessages(from: nextSocket, generation: expectedGeneration)
         }
@@ -167,12 +169,12 @@ final class WorldSocketClient {
 
         guard let event = try? JSONDecoder().decode(WorldEventEnvelope.self, from: data) else { return }
         if event.type == "username_updated" || event.type == "username_error" {
-        if event.type == "username_updated", let nextUsername = event.username {
-            username = nextUsername
-            pendingUsername = nextUsername
-            UserDefaults.standard.set(nextUsername, forKey: "cubacadabra.username")
-        } else if event.type == "username_error" {
-            pendingUsername = username
+            if event.type == "username_updated", let nextUsername = event.username {
+                username = nextUsername
+                pendingUsername = nextUsername
+                UserDefaults.standard.set(nextUsername, forKey: "cubacadabra.username")
+            } else if event.type == "username_error" {
+                pendingUsername = username
             }
             onUsername(WorldUsernameEvent(type: event.type, username: event.username, code: event.code))
             return
@@ -218,6 +220,20 @@ final class WorldSocketClient {
     private func sendUsername(_ value: String, on task: URLSessionWebSocketTask?) {
         guard !stopped, let task, task.state == .running else { return }
         let message = WorldUsernameMessage(username: value)
+        guard let data = try? JSONEncoder().encode(message),
+              let text = String(data: data, encoding: .utf8) else { return }
+        task.send(.string(text)) { _ in }
+    }
+
+    func setHidden(_ nextHidden: Bool) {
+        guard hidden != nextHidden else { return }
+        hidden = nextHidden
+        sendVisibility(on: socketTask)
+    }
+
+    private func sendVisibility(on task: URLSessionWebSocketTask?) {
+        guard !stopped, let task, task.state == .running else { return }
+        let message = WorldVisibilityMessage(hidden: hidden)
         guard let data = try? JSONEncoder().encode(message),
               let text = String(data: data, encoding: .utf8) else { return }
         task.send(.string(text)) { _ in }
@@ -353,4 +369,9 @@ private struct WorldMoveMessage: Encodable {
 private struct WorldUsernameMessage: Encodable {
     let type = "set_username"
     let username: String
+}
+
+private struct WorldVisibilityMessage: Encodable {
+    let type = "set_hidden"
+    let hidden: Bool
 }

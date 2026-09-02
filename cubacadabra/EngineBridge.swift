@@ -115,6 +115,19 @@ final class EngineBridge {
         }
     }
 
+    @discardableResult
+    func setUsername(_ username: String) -> Bool {
+        let bytes = Array(username.utf8)
+        guard let pointer = engine_username_buffer_ptr(handle, UInt(bytes.count)) else {
+            return false
+        }
+        bytes.withUnsafeBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.baseAddress else { return }
+            pointer.update(from: baseAddress.assumingMemoryBound(to: UInt8.self), count: bytes.count)
+        }
+        return engine_load_username_buffer(handle) != 0
+    }
+
     func step(_ delta: Float) {
         engine_step(handle, delta)
     }

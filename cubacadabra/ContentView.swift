@@ -33,7 +33,8 @@ final class GameViewModel: ObservableObject {
     @Published private(set) var presenceNotice: PresenceNotice?
     @Published private(set) var username = ""
     @Published private(set) var usernameStatus = "Choose a name other players can find you by."
-    @Published private(set) var settingsRoomOpen = false
+    @Published private(set) var settingsRoomState: UInt8 = 0
+    @Published private(set) var usernameEditorOpen = false
     @Published var sprinting = false
 
     private let loader = GamePackageLoader()
@@ -50,7 +51,7 @@ final class GameViewModel: ObservableObject {
     private var lastMagnification: CGFloat = 1
     private var noticeTask: Task<Void, Never>?
     private var remotePlayers: [String: EngineRemotePlayer] = [:]
-    private var settingsRoomDismissedUntilExit = false
+    private var connectedWorldID: String?
     private lazy var worldSocket = WorldSocketClient(
         onStateChange: { [weak self] state in
             self?.connectionState = state
@@ -68,7 +69,7 @@ final class GameViewModel: ObservableObject {
 
     func load() async {
         guard engine == nil else {
-            worldSocket.connect(worldID: worldID)
+            connectWorld(worldID)
             return
         }
         isLoading = true
@@ -85,13 +86,15 @@ final class GameViewModel: ObservableObject {
             runtimeWorldIDs = loadedPackage.runtimeWorldEntries().map(\.id)
             package = loadedPackage
             username = worldSocket.username
+            loadedEngine.setUsername(username)
             worldID = loadedPackage.startWorld
+            worldSocket.setHidden(worldID == "settings")
             engine = loadedEngine
             let initialFrame = loadedEngine.frame()
             frame = initialFrame
             lastTick = nil
             isLoading = false
-            worldSocket.connect(worldID: worldID)
+            connectWorld(worldID)
         } catch {
             isLoading = false
             errorMessage = error.localizedDescription
@@ -100,6 +103,7 @@ final class GameViewModel: ObservableObject {
 
     func retry() {
         worldSocket.disconnect()
+        connectedWorldID = nil
         engine = nil
         package = nil
         frame = nil
@@ -114,15 +118,17 @@ final class GameViewModel: ObservableObject {
         }
         let delta = Float(min(max(date.timeIntervalSince(lastTick), 0), 0.05))
         self.lastTick = date
-        engine.setRemotePlayers(remotePlayers.keys.sorted().compactMap { remotePlayers[$0] })
+        engine.setRemotePlayers(worldID == "settings"
+            ? []
+            : remotePlayers.keys.sorted().compactMap { remotePlayers[$0] })
         engine.setInput(
-            forward: forward,
-            strafe: strafe,
-            sprint: sprinting,
-            jump: jumpQueued,
-            lookX: lookX,
-            lookY: lookY,
-            zoomDelta: zoomDelta
+            forward: usernameEditorOpen ? 0 : forward,
+            strafe: usernameEditorOpen ? 0 : strafe,
+            sprint: usernameEditorOpen ? false : sprinting,
+            jump: usernameEditorOpen ? false : jumpQueued,
+            lookX: usernameEditorOpen ? 0 : lookX,
+            lookY: usernameEditorOpen ? 0 : lookY,
+            zoomDelta: usernameEditorOpen ? 0 : zoomDelta
         )
         jumpQueued = false
         lookX = 0
@@ -134,35 +140,39 @@ final class GameViewModel: ObservableObject {
         if let activeWorldID = runtimeWorldIDs[safe: nextFrame.activeWorldIndex],
            activeWorldID != worldID {
             worldID = activeWorldID
+            worldSocket.setHidden(activeWorldID == "settings")
             forward = 0
             strafe = 0
             sprinting = false
-            remotePlayers.removeAll()
-            engine.setRemotePlayers([])
-            worldSocket.connect(worldID: activeWorldID)
+            if activeWorldID == "settings" {
+                engine.setRemotePlayers([])
+            }
+            connectWorld(activeWorldID)
         }
         frame = nextFrame
-        worldSocket.sendMove(
-            position: nextFrame.player.position,
-            yaw: nextFrame.player.yaw,
-            moving: nextFrame.player.moving,
-            sprinting: nextFrame.player.sprinting
-        )
+        if worldID != "settings" {
+            worldSocket.sendMove(
+                position: nextFrame.player.position,
+                yaw: nextFrame.player.yaw,
+                moving: nextFrame.player.moving,
+                sprinting: nextFrame.player.sprinting
+            )
+        }
     }
 
     func setMove(strafe: Float, forward: Float) {
-        guard !settingsRoomOpen else { return }
+        guard !usernameEditorOpen else { return }
         self.strafe = strafe
         self.forward = forward
     }
 
     func jump() {
-        guard !settingsRoomOpen else { return }
+        guard !usernameEditorOpen else { return }
         jumpQueued = true
     }
 
     func lookChanged(to translation: CGSize) {
-        guard !settingsRoomOpen else { return }
+        guard !usernameEditorOpen else { return }
         lookX += Float(translation.width - lastLookTranslation.width)
         lookY += Float(translation.height - lastLookTranslation.height)
         lastLookTranslation = translation
@@ -171,7 +181,7 @@ final class GameViewModel: ObservableObject {
     func lookEnded() { lastLookTranslation = .zero }
 
     func zoomChanged(to magnification: CGFloat) {
-        guard !settingsRoomOpen else { return }
+        guard !usernameEditorOpen else { return }
         let change = magnification - lastMagnification
         zoomDelta -= Float(change * 8)
         lastMagnification = magnification
@@ -180,7 +190,7 @@ final class GameViewModel: ObservableObject {
     func zoomEnded() { lastMagnification = 1 }
 
     func toggleSprinting() {
-        guard !settingsRoomOpen else { return }
+        guard !usernameEditorOpen else { return }
         sprinting.toggle()
     }
 
@@ -190,9 +200,17 @@ final class GameViewModel: ObservableObject {
 
     var renderEngine: EngineBridge? { engine }
 
-    func leaveSettingsRoom() {
-        settingsRoomDismissedUntilExit = true
-        settingsRoomOpen = false
+    func requestUsernameEdit() {
+        guard settingsRoomState == 2, !usernameEditorOpen else { return }
+        usernameStatus = "Choose a unique name using 2–24 characters."
+        usernameEditorOpen = true
+        forward = 0
+        strafe = 0
+        jumpQueued = false
+    }
+
+    func cancelUsernameEdit() {
+        usernameEditorOpen = false
         forward = 0
         strafe = 0
         jumpQueued = false
@@ -210,6 +228,7 @@ final class GameViewModel: ObservableObject {
 
     func disconnect() {
         worldSocket.disconnect()
+        connectedWorldID = nil
     }
 
     private func handlePresenceEvent(_ event: WorldPresenceEvent) {
@@ -255,7 +274,8 @@ final class GameViewModel: ObservableObject {
     private func handleUsernameEvent(_ event: WorldUsernameEvent) {
         if event.type == "username_updated", let nextUsername = event.username {
             username = nextUsername
-            usernameStatus = "Saved. Your new name is live in this lobby."
+            engine?.setUsername(nextUsername)
+            usernameEditorOpen = false
         } else if event.type == "username_error" {
             usernameStatus = event.code == "username_taken"
                 ? "That name is already in use. Try another."
@@ -264,16 +284,17 @@ final class GameViewModel: ObservableObject {
     }
 
     private func updateSettingsRoomState(_ roomState: UInt8) {
-        if roomState != 2 {
-            settingsRoomDismissedUntilExit = false
-        }
-        guard roomState == 2,
-              !settingsRoomDismissedUntilExit,
-              !settingsRoomOpen else { return }
-        settingsRoomOpen = true
-        forward = 0
-        strafe = 0
-        jumpQueued = false
+        settingsRoomState = roomState
+        if roomState == 0 { usernameEditorOpen = false }
+    }
+
+    private func connectWorld(_ visualWorldID: String) {
+        let networkWorldID = visualWorldID == "settings" ? "lobby" : visualWorldID
+        guard networkWorldID != connectedWorldID else { return }
+        connectedWorldID = networkWorldID
+        remotePlayers.removeAll()
+        engine?.setRemotePlayers([])
+        worldSocket.connect(worldID: networkWorldID)
     }
 
     private func defaultPlayerLabel(_ playerID: String) -> String {
@@ -307,17 +328,24 @@ struct GameSurface: View {
                             .onChanged { value in model.zoomChanged(to: value) }
                             .onEnded { _ in model.zoomEnded() }
                     )
+                    .simultaneousGesture(
+                        TapGesture().onEnded { model.requestUsernameEdit() }
+                    )
             }
-            GameAtmosphere(isSession: model.worldID != "lobby")
+            if model.worldID != "settings" {
+                GameAtmosphere(isSession: model.worldID != "lobby")
+            }
             VStack(alignment: .leading, spacing: 0) {
-                GameHeader(model: model)
-                    .padding(.horizontal, 20)
-                    .padding(.top, 18)
-                if let notice = model.presenceNotice {
-                    PresenceNoticeView(notice: notice)
+                if model.worldID != "settings" {
+                    GameHeader(model: model)
                         .padding(.horizontal, 20)
-                        .padding(.top, 10)
-                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .padding(.top, 18)
+                    if let notice = model.presenceNotice {
+                        PresenceNoticeView(notice: notice)
+                            .padding(.horizontal, 20)
+                            .padding(.top, 10)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
                 }
                 Spacer()
                 GameControls(model: model)
@@ -326,8 +354,8 @@ struct GameSurface: View {
             }
             .ignoresSafeArea(edges: .bottom)
             .animation(.easeOut(duration: 0.22), value: model.presenceNotice)
-            if model.settingsRoomOpen {
-                SettingsRoomView(model: model)
+            if model.usernameEditorOpen {
+                UsernameEditorView(model: model)
                     .transition(.opacity)
                     .zIndex(2)
             }
@@ -336,9 +364,8 @@ struct GameSurface: View {
     }
 }
 
-private struct SettingsRoomView: View {
+private struct UsernameEditorView: View {
     @ObservedObject var model: GameViewModel
-    @State private var isUsernameSelected = false
     @State private var draftUsername = ""
     @FocusState private var usernameFocused: Bool
 
@@ -346,109 +373,41 @@ private struct SettingsRoomView: View {
         ZStack {
             Color.black.opacity(0.42)
                 .ignoresSafeArea()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    HStack(alignment: .top) {
-                        HStack(spacing: 13) {
-                            Image(systemName: "gearshape.fill")
-                                .font(.system(size: 22, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .frame(width: 46, height: 46)
-                                .background(Color.accentColor, in: Circle())
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text("LOBBY SETTINGS")
-                                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                                    .tracking(1.5)
-                                    .foregroundStyle(.secondary)
-                                Text("Settings room")
-                                    .font(.system(size: 30, weight: .bold, design: .rounded))
-                                    .foregroundStyle(.primary)
-                            }
-                        }
-                        Spacer(minLength: 10)
-                        Button("LEAVE") { model.leaveSettingsRoom() }
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
-                            .tracking(1)
-                    }
-
-                    Text("A quiet place for the details that make this world yours.")
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
-
-                    Button {
-                        isUsernameSelected = true
-                        draftUsername = model.username
-                        usernameFocused = true
-                    } label: {
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("USERNAME")
-                                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                                Text("How other players see you")
-                                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Text(model.username)
-                                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                .foregroundStyle(Color.accentColor)
-                            Image(systemName: "chevron.right")
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(16)
-                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.accentColor.opacity(isUsernameSelected ? 0.7 : 0.22), lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-
-                    if isUsernameSelected {
-                        VStack(alignment: .leading, spacing: 9) {
-                            Text("YOUR PLAYER NAME")
-                                .font(.system(size: 11, weight: .bold, design: .rounded))
-                                .tracking(0.8)
-                            HStack(spacing: 10) {
-                                TextField("Player name", text: $draftUsername)
-                                    .textFieldStyle(.roundedBorder)
-                                    .textInputAutocapitalization(.words)
-                                    .autocorrectionDisabled()
-                                    .focused($usernameFocused)
-                                Button("SAVE") { model.saveUsername(draftUsername) }
-                                    .buttonStyle(GameButtonStyle())
-                            }
-                            Text(model.usernameStatus)
-                                .font(.system(size: 11, weight: .medium, design: .rounded))
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(16)
-                        .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    }
-
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: "plus.circle")
-                            .foregroundStyle(Color.accentColor)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("MORE ROOMS TO COME")
-                                .font(.system(size: 11, weight: .bold, design: .rounded))
-                            Text("Display, controls, and accessibility options are being furnished.")
-                                .font(.system(size: 11, weight: .medium, design: .rounded))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(.top, 4)
-
-                    Text("Walk back through the door when you’re ready to return to the lobby.")
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 15) {
+                Text("PLAYER IDENTITY")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .tracking(1.4)
+                    .foregroundStyle(.secondary)
+                Text("Edit username")
+                    .font(.system(size: 27, weight: .bold, design: .rounded))
+                TextField("Player name", text: $draftUsername)
+                    .textFieldStyle(.roundedBorder)
+                    .textInputAutocapitalization(.words)
+                    .autocorrectionDisabled()
+                    .submitLabel(.done)
+                    .focused($usernameFocused)
+                    .onSubmit { model.saveUsername(draftUsername) }
+                Text(model.usernameStatus)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+                HStack {
+                    Button("CANCEL") { model.cancelUsernameEdit() }
+                    Spacer()
+                    Button("SAVE NAME") { model.saveUsername(draftUsername) }
+                        .buttonStyle(.borderedProminent)
                 }
-                .padding(22)
-                .frame(maxWidth: 620)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(.primary.opacity(0.12), lineWidth: 1))
-                .shadow(radius: 24)
-                .padding(18)
             }
+            .padding(22)
+            .frame(maxWidth: 430)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(.primary.opacity(0.12), lineWidth: 1))
+            .shadow(radius: 24)
+            .padding(18)
         }
-        .onAppear { draftUsername = model.username }
+        .onAppear {
+            draftUsername = model.username
+            usernameFocused = true
+        }
     }
 }
 
