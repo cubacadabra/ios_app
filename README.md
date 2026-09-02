@@ -1,4 +1,4 @@
-# Cubacadabra iOS app
+# Cubacadabra ios app
 
 This is the Swift platform client. It loads the `first-game` package from a
 web host, uses the Rust static library for simulation, Luau execution, and
