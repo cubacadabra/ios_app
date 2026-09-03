@@ -18,7 +18,6 @@ struct ContentView: View {
             } else if gamePresented {
                 GameSessionView(
                     model: model,
-                    exit: { gamePresented = false },
                     openSafety: {
                         pausedForSafety = true
                         model.pauseGame()
@@ -32,7 +31,8 @@ struct ContentView: View {
                 HomeView(
                     model: model,
                     safetyCenterPresented: $safetyCenterPresented,
-                    enterGame: { gamePresented = true }
+                    enterGame: { gamePresented = true },
+                    leaveGame: { model.leaveGame() }
                 )
             }
         }
@@ -48,7 +48,7 @@ struct ContentView: View {
                 model.enterGame()
             } else if !pausedForSafety {
                 safetyCenterPresented = false
-                model.leaveGame()
+                model.exitToHome()
             } else {
                 pausedForSafety = false
             }
@@ -309,6 +309,12 @@ final class GameViewModel: ObservableObject {
     func leaveGame() {
         disconnect()
         pauseGame()
+        hasEnteredGame = false
+    }
+
+    func exitToHome() {
+        disconnect()
+        pauseGame()
     }
 
     var activeRemotePlayers: [RemotePlayerSummary] {
@@ -528,6 +534,7 @@ private struct HomeView: View {
     @ObservedObject var model: GameViewModel
     @Binding var safetyCenterPresented: Bool
     let enterGame: () -> Void
+    let leaveGame: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -657,6 +664,33 @@ private struct HomeView: View {
                     ? "Returns to your paused game"
                     : "Opens the interactive game lobby"
             )
+
+            if model.hasEnteredGame {
+                Button(role: .destructive, action: leaveGame) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "rectangle.portrait.and.arrow.right")
+                            .font(.system(size: 14, weight: .bold))
+                        Text("LEAVE GAME")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .tracking(1.1)
+                        Spacer()
+                    }
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 18)
+                    .frame(minHeight: 52)
+                    .background(
+                        Color.red.opacity(colorScheme == .dark ? 0.18 : 0.10),
+                        in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(Color.red.opacity(0.28), lineWidth: 1)
+                    }
+                }
+                .buttonStyle(HomePrimaryButtonStyle())
+                .accessibilityHint("Leaves your paused game and removes the resume option")
+                .padding(.top, 2)
+            }
         }
     }
 
@@ -744,14 +778,12 @@ private struct HomePrimaryButtonStyle: ButtonStyle {
 
 private struct GameSessionView: View {
     let model: GameViewModel
-    let exit: () -> Void
     let openSafety: () -> Void
 
     var body: some View {
         GameSurface(
             model: model,
-            onSafety: openSafety,
-            exit: exit
+            onSafety: openSafety
         )
     }
 }
@@ -759,16 +791,13 @@ private struct GameSessionView: View {
 struct GameSurface: View {
     @ObservedObject var model: GameViewModel
     let onSafety: () -> Void
-    let exit: () -> Void
 
     init(
         model: GameViewModel,
-        onSafety: @escaping () -> Void = {},
-        exit: @escaping () -> Void = {}
+        onSafety: @escaping () -> Void = {}
     ) {
         self.model = model
         self.onSafety = onSafety
-        self.exit = exit
     }
 
     var body: some View {
@@ -795,7 +824,7 @@ struct GameSurface: View {
             }
             VStack(alignment: .leading, spacing: 0) {
                 if model.worldID != "settings" {
-                    GameHeader(model: model, onSafety: onSafety, exit: exit)
+                    GameHeader(model: model, onSafety: onSafety)
                         .padding(.horizontal, 20)
                         .padding(.top, 18)
                     if let notice = model.presenceNotice {
@@ -941,7 +970,6 @@ private struct GameAtmosphere: View {
 struct GameHeader: View {
     @ObservedObject var model: GameViewModel
     let onSafety: () -> Void
-    let exit: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -970,15 +998,6 @@ struct GameHeader: View {
                                 .background(.white.opacity(0.14), in: Circle())
                         }
                         .accessibilityLabel("Players and safety")
-
-                        Button(action: exit) {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundStyle(.white)
-                                .frame(width: 44, height: 44)
-                                .background(.white.opacity(0.14), in: Circle())
-                        }
-                        .accessibilityLabel("Exit game")
                     }
                     Text(model.worldID == "lobby" ? "LOBBY" : "SESSION")
                         .font(.system(size: 11, weight: .bold, design: .rounded))
