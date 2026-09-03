@@ -440,7 +440,7 @@ struct ModerationNotice: Identifiable, Equatable {
     let message: String
 }
 
-struct RemotePlayerSummary: Identifiable, Equatable {
+struct RemotePlayerSummary: Identifiable, Hashable {
     let id: String
     let username: String
 }
@@ -857,8 +857,17 @@ private struct SafetyCenterView: View {
                 }
             }
         }
-        .sheet(item: $reportTarget) { player in
-            ReportPlayerView(model: model, player: player)
+        .navigationDestination(
+            isPresented: Binding(
+                get: { reportTarget != nil },
+                set: { if !$0 { reportTarget = nil } }
+            )
+        ) {
+            if let player = reportTarget {
+                ReportPlayerView(player: player) { reason, details in
+                    model.reportPlayer(player, reason: reason, details: details)
+                }
+            }
         }
         .confirmationDialog(
             "Block \(blockTarget?.username ?? "this player")?",
@@ -915,8 +924,8 @@ private struct PlayerSafetyRow: View {
 
 private struct ReportPlayerView: View {
     @Environment(\.dismiss) private var dismiss
-    @ObservedObject var model: GameViewModel
     let player: RemotePlayerSummary
+    let report: (ReportReason, String) -> Void
     @State private var reason: ReportReason = .inappropriateName
     @State private var details = ""
 
@@ -940,16 +949,26 @@ private struct ReportPlayerView: View {
                 }
 
                 Section("Details (optional)") {
-                    TextField("What should we review?", text: $details, axis: .vertical)
-                        .lineLimit(3...6)
+                    TextEditor(text: $details)
+                        .frame(minHeight: 88)
+                        .overlay(alignment: .topLeading) {
+                            if details.isEmpty {
+                                Text("What should we review?")
+                                    .foregroundStyle(.secondary)
+                                    .padding(.top, 8)
+                                    .padding(.leading, 5)
+                                    .allowsHitTesting(false)
+                            }
+                        }
                         .textInputAutocapitalization(.sentences)
                 }
 
                 Section {
                     Button("Send Report") {
-                        model.reportPlayer(player, reason: reason, details: details)
+                        report(reason, details)
                         dismiss()
                     }
+                    .buttonStyle(.borderedProminent)
                     .frame(maxWidth: .infinity, alignment: .center)
                 }
             }
