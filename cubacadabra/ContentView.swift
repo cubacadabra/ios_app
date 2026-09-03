@@ -6,6 +6,7 @@ struct ContentView: View {
     @StateObject private var model = GameViewModel()
     @State private var gamePresented = false
     @State private var safetyCenterPresented = false
+    @State private var pausedForSafety = false
     private let tick = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -17,8 +18,15 @@ struct ContentView: View {
             } else if gamePresented {
                 GameSessionView(
                     model: model,
-                    safetyCenterPresented: $safetyCenterPresented,
-                    exit: { gamePresented = false }
+                    exit: { gamePresented = false },
+                    openSafety: {
+                        pausedForSafety = true
+                        model.pauseGame()
+                        gamePresented = false
+                        DispatchQueue.main.async {
+                            safetyCenterPresented = true
+                        }
+                    }
                 )
             } else {
                 HomeView(
@@ -36,10 +44,13 @@ struct ContentView: View {
         }
         .onChange(of: gamePresented) { isPresented in
             if isPresented {
+                pausedForSafety = false
                 model.enterGame()
-            } else {
+            } else if !pausedForSafety {
                 safetyCenterPresented = false
                 model.leaveGame()
+            } else {
+                pausedForSafety = false
             }
         }
         .onDisappear { model.disconnect() }
@@ -81,6 +92,7 @@ final class GameViewModel: ObservableObject {
     private var moderationNoticeTask: Task<Void, Never>?
     private var remotePlayers: [String: EngineRemotePlayer] = [:]
     private var connectedWorldID: String?
+    private var gamePaused = false
 
     init() {
         let storedIDs = UserDefaults.standard.stringArray(forKey: blockedPlayerIDsKey) ?? []
@@ -149,7 +161,7 @@ final class GameViewModel: ObservableObject {
     }
 
     func tick(at date: Date) {
-        guard let engine, frame != nil else { return }
+        guard let engine, frame != nil, !gamePaused else { return }
         guard let lastTick else {
             self.lastTick = date
             return
@@ -271,12 +283,14 @@ final class GameViewModel: ObservableObject {
 
     func enterGame() {
         guard engine != nil else { return }
+        gamePaused = false
         lastTick = nil
         connectWorld(worldID)
     }
 
-    func leaveGame() {
-        disconnect()
+    func pauseGame() {
+        gamePaused = true
+        lastTick = nil
         forward = 0
         strafe = 0
         jumpQueued = false
@@ -284,6 +298,11 @@ final class GameViewModel: ObservableObject {
         lookY = 0
         zoomDelta = 0
         usernameEditorOpen = false
+    }
+
+    func leaveGame() {
+        disconnect()
+        pauseGame()
     }
 
     var activeRemotePlayers: [RemotePlayerSummary] {
@@ -506,10 +525,15 @@ private struct HomeView: View {
     let enterGame: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var appeared = false
 
     private let coral = Color(red: 0.91, green: 0.39, blue: 0.29)
     private let ink = Color(red: 0.15, green: 0.29, blue: 0.29)
+
+    private var isWideLayout: Bool {
+        horizontalSizeClass == .regular
+    }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -542,93 +566,33 @@ private struct HomeView: View {
                         .accessibilityLabel("Players and safety")
                     }
 
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text(model.package?.scene.eyebrow.uppercased() ?? "A SMALL WORLD")
-                            .font(.system(size: 12, weight: .bold, design: .rounded))
-                            .tracking(1.8)
-                            .foregroundStyle(.secondary)
-                        Text("First Game")
-                            .font(.system(size: 44, weight: .bold, design: .rounded))
-                            .foregroundStyle(colorScheme == .dark ? Color.primary : ink)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.82)
-                        Text("Start in the lobby, find a gate, and see who else is exploring.")
-                            .font(.system(size: 17, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        Button(action: enterGame) {
-                            HStack(spacing: 12) {
-                                Text("ENTER THE LOBBY")
-                                Spacer()
-                                Image(systemName: "arrow.right")
-                                    .font(.system(size: 15, weight: .bold))
+                    if isWideLayout {
+                        HStack(alignment: .top, spacing: 40) {
+                            heroSection
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            VStack(alignment: .leading, spacing: 0) {
+                                factsSection
+                                Divider()
+                                    .padding(.vertical, 28)
+                                identitySection
+                                safetyLink
                             }
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .tracking(1.1)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 18)
-                            .frame(minHeight: 56)
-                            .background(coral, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .frame(width: 240, alignment: .leading)
                         }
-                        .buttonStyle(HomePrimaryButtonStyle())
-                        .accessibilityHint("Opens the interactive game lobby")
+                        .padding(.top, 88)
+                    } else {
+                        heroSection
+                            .padding(.top, 58)
+                        factsSection
+                            .padding(.top, 42)
+                        Divider()
+                            .padding(.vertical, 28)
+                        identitySection
+                        safetyLink
                     }
-                    .padding(.top, 58)
-
-                    HStack(spacing: 18) {
-                        HomeFact(label: "STATUS", value: "READY TO ENTER")
-                        Rectangle()
-                            .fill(.primary.opacity(0.14))
-                            .frame(width: 1, height: 34)
-                        HomeFact(
-                            label: "LOBBY SIZE",
-                            value: "UP TO \(model.package?.scene.maxPlayers ?? 18)"
-                        )
-                    }
-                    .padding(.top, 42)
-
-                    Divider()
-                        .padding(.vertical, 28)
-
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("YOUR IDENTITY")
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .tracking(1.5)
-                            .foregroundStyle(.secondary)
-                        HStack(alignment: .firstTextBaseline) {
-                            Text(model.username.isEmpty ? "Player" : model.username)
-                                .font(.system(size: 20, weight: .bold, design: .rounded))
-                            Spacer()
-                            Text("Change this in the settings room")
-                                .font(.system(size: 12, weight: .medium, design: .rounded))
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.trailing)
-                        }
-                    }
-
-                    Button {
-                        safetyCenterPresented = true
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: "checkmark.shield")
-                                .font(.system(size: 17, weight: .semibold))
-                            Text("PLAYERS & SAFETY")
-                                .font(.system(size: 12, weight: .bold, design: .rounded))
-                                .tracking(1.1)
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundStyle(.secondary)
-                        }
-                        .foregroundStyle(.primary)
-                        .frame(minHeight: 52)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.top, 18)
                 }
-                .frame(maxWidth: 520, alignment: .leading)
-                .padding(.horizontal, 24)
+                .frame(maxWidth: isWideLayout ? 900 : 520, alignment: .leading)
+                .padding(.horizontal, isWideLayout ? 54 : 24)
                 .padding(.top, 18)
                 .padding(.bottom, 28)
             }
@@ -648,6 +612,92 @@ private struct HomeView: View {
         .sheet(isPresented: $safetyCenterPresented) {
             SafetyCenterView(model: model)
         }
+    }
+
+    private var heroSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(model.package?.scene.eyebrow.uppercased() ?? "A SMALL WORLD")
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .tracking(1.8)
+                .foregroundStyle(.secondary)
+            Text("First Game")
+                .font(.system(size: isWideLayout ? 50 : 44, weight: .bold, design: .rounded))
+                .foregroundStyle(colorScheme == .dark ? Color.primary : ink)
+                .lineLimit(2)
+                .minimumScaleFactor(0.82)
+            Text("Start in the lobby, find a gate, and see who else is exploring.")
+                .font(.system(size: 17, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button(action: enterGame) {
+                HStack(spacing: 12) {
+                    Text("ENTER THE LOBBY")
+                    Spacer()
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 15, weight: .bold))
+                }
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .tracking(1.1)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 18)
+                .frame(minHeight: 56)
+                .background(coral, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            .buttonStyle(HomePrimaryButtonStyle())
+            .accessibilityHint("Opens the interactive game lobby")
+        }
+    }
+
+    private var factsSection: some View {
+        HStack(spacing: 18) {
+            HomeFact(label: "STATUS", value: "READY TO ENTER")
+            Rectangle()
+                .fill(.primary.opacity(0.14))
+                .frame(width: 1, height: 34)
+            HomeFact(
+                label: "LOBBY SIZE",
+                value: "UP TO \(model.package?.scene.maxPlayers ?? 18)"
+            )
+        }
+    }
+
+    private var identitySection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("YOUR IDENTITY")
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .tracking(1.5)
+                .foregroundStyle(.secondary)
+            Text(model.username.isEmpty ? "Player" : model.username)
+                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Text("Change this in the settings room")
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var safetyLink: some View {
+        Button {
+            safetyCenterPresented = true
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "checkmark.shield")
+                    .font(.system(size: 17, weight: .semibold))
+                Text("PLAYERS & SAFETY")
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .tracking(1.1)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.secondary)
+            }
+            .foregroundStyle(.primary)
+            .frame(minHeight: 52)
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 18)
     }
 }
 
@@ -680,18 +730,15 @@ private struct HomePrimaryButtonStyle: ButtonStyle {
 
 private struct GameSessionView: View {
     let model: GameViewModel
-    @Binding var safetyCenterPresented: Bool
     let exit: () -> Void
+    let openSafety: () -> Void
 
     var body: some View {
         GameSurface(
             model: model,
-            onSafety: { safetyCenterPresented = true },
+            onSafety: openSafety,
             exit: exit
         )
-        .sheet(isPresented: $safetyCenterPresented) {
-            SafetyCenterView(model: model)
-        }
     }
 }
 
