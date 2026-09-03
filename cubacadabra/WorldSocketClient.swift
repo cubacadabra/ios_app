@@ -229,7 +229,7 @@ final class WorldSocketClient {
                 prompt: event.prompt,
                 sessionWorldID: event.sessionWorldID,
                 playerIDs: event.playerIDs ?? [],
-                startsAt: event.startsAt,
+                startsAt: event.startsAt ?? event.launch?.startsAt,
                 serverNow: event.serverNow,
                 blockCount: event.blocks?.count,
                 blocks: event.blocks ?? []
@@ -413,13 +413,18 @@ private struct WorldEventEnvelope: Decodable {
     let startsAt: Int64?
     let serverNow: Int64?
     let blocks: [WorldBuildBlock]?
+    let launch: WorldLaunchEnvelope?
 
     enum CodingKeys: String, CodingKey {
         case type, id, x, y, z, yaw, moving, sprinting, username, code, kind, phase, prompt
         case sessionWorldID = "sessionWorldId"
         case playerIDs = "playerIds"
-        case startsAt, serverNow, blocks
+        case startsAt, serverNow, blocks, launch
     }
+}
+
+private struct WorldLaunchEnvelope: Decodable {
+    let startsAt: Int64?
 }
 
 private struct WorldMoveMessage: Encodable {

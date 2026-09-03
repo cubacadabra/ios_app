@@ -321,6 +321,7 @@ final class GameViewModel: ObservableObject {
     }
 
     func leaveGame() {
+        returnToLobby()
         disconnect()
         pauseGame()
         hasEnteredGame = false
@@ -542,7 +543,15 @@ final class GameViewModel: ObservableObject {
 
     func returnToLobby() {
         pendingSessionWorldID = nil
-        if let index = runtimeWorldIDs.firstIndex(of: "lobby") { engine?.startWorld(index) }
+        guard let index = runtimeWorldIDs.firstIndex(of: "lobby"), engine?.startWorld(index) == true else { return }
+        worldID = "lobby"
+        buildPhase = "build"
+        buildPrompt = ""
+        buildBlocks = []
+        buildBlockCount = 0
+        engine?.setBuildBlocks([])
+        worldSocket.setHidden(false)
+        connectWorld("lobby")
     }
 
     func lobbyLaunchStatus(for pad: LaunchPadDefinition, live: EnginePad?) -> String {
