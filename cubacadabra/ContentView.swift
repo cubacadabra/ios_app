@@ -421,6 +421,12 @@ final class GameViewModel: ObservableObject {
     }
 
     private func handleMovementEvent(_ event: WorldMovementEvent) {
+        if event.isSelf {
+            if event.corrected {
+                engine?.reconcilePlayer(position: event.position, yaw: event.yaw)
+            }
+            return
+        }
         guard !blockedPlayerIDs.contains(event.playerID) else { return }
         if remotePlayerNames[event.playerID] == nil {
             remotePlayerNames[event.playerID] = defaultPlayerLabel(event.playerID)

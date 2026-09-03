@@ -140,6 +140,10 @@ final class EngineBridge {
         }
     }
 
+    func reconcilePlayer(position: SIMD3<Float>, yaw: Float) {
+        engine_reconcile_player(handle, position.x, position.y, position.z, yaw)
+    }
+
     @discardableResult
     func setUsername(_ username: String) -> Bool {
         let bytes = Array(username.utf8)

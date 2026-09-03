@@ -34,6 +34,8 @@ struct WorldMovementEvent {
     let yaw: Float
     let moving: Bool
     let sprinting: Bool
+    let isSelf: Bool
+    let corrected: Bool
 }
 
 struct WorldExperienceEvent {
@@ -207,7 +209,6 @@ final class WorldSocketClient {
         }
         if event.type == "move" {
             guard let eventPlayerID = event.id,
-                  eventPlayerID != playerID,
                   let x = event.x,
                   let y = event.y,
                   let z = event.z,
@@ -217,7 +218,9 @@ final class WorldSocketClient {
                 position: SIMD3(x, y, z),
                 yaw: yaw,
                 moving: event.moving ?? false,
-                sprinting: event.sprinting ?? false
+                sprinting: event.sprinting ?? false,
+                isSelf: eventPlayerID == playerID,
+                corrected: event.corrected ?? false
             ))
             return
         }
@@ -403,6 +406,7 @@ private struct WorldEventEnvelope: Decodable {
     let yaw: Float?
     let moving: Bool?
     let sprinting: Bool?
+    let corrected: Bool?
     let username: String?
     let code: String?
     let kind: String?
@@ -416,7 +420,7 @@ private struct WorldEventEnvelope: Decodable {
     let launch: WorldLaunchEnvelope?
 
     enum CodingKeys: String, CodingKey {
-        case type, id, x, y, z, yaw, moving, sprinting, username, code, kind, phase, prompt
+        case type, id, x, y, z, yaw, moving, sprinting, corrected, username, code, kind, phase, prompt
         case sessionWorldID = "sessionWorldId"
         case playerIDs = "playerIds"
         case startsAt, serverNow, blocks, launch
