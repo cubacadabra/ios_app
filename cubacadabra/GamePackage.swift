@@ -129,6 +129,8 @@ enum GamePackageError: LocalizedError {
     case httpFailure(Int)
     case invalidScript
     case missingWorld(String)
+    case missingBundledPackage
+    case invalidBundledPackage
 
     var errorDescription: String? {
         switch self {
@@ -136,6 +138,8 @@ enum GamePackageError: LocalizedError {
         case .httpFailure(let status): return "The game package server returned HTTP \(status)."
         case .invalidScript: return "The game script was not valid UTF-8."
         case .missingWorld(let id): return "The game world \"\(id)\" was not found."
+        case .missingBundledPackage: return "The bundled first game could not be found."
+        case .invalidBundledPackage: return "The bundled first game could not be opened."
         }
     }
 }
@@ -168,20 +172,69 @@ enum ClientConfiguration {
     }
 }
 
+enum AppLinks {
+#if DEBUG
+    static let privacy = URL(string: "http://localhost:5173/privacy/")!
+    static let terms = URL(string: "http://localhost:5173/terms/")!
+#else
+    static let privacy = URL(string: "https://cubacadabra.com/privacy/")!
+    static let terms = URL(string: "https://cubacadabra.com/terms/")!
+#endif
+    static let support = URL(string: "mailto:support@cubacadabra.com?subject=Cubacadabra%20safety%20report")!
+}
+
 struct GamePackageLoader {
     var baseURL = ClientConfiguration.gameBaseURL
+    private static let cachedManifestKey = "cubacadabra.cached-manifest"
+    private static let maximumManifestBytes = 512_000
 
     func load() async throws -> LoadedGamePackage {
+        let bundled = try loadBundledPackage()
+        if let cached = cachedManifestData(),
+           let cachedPackage = try? makePackage(manifestData: cached, script: bundled.script) {
+            return cachedPackage
+        }
+        return bundled
+    }
+
+    /// Refreshes declarative game content for the next launch. Executable game
+    /// rules always remain bundled in the app and are never downloaded.
+    func refreshManifest() async {
         let manifestURL = baseURL.appendingPathComponent("manifest.json")
-        let scriptURL = baseURL.appendingPathComponent("game.luau")
-        async let manifestData = fetch(manifestURL)
-        async let scriptData = fetch(scriptURL)
-        let loadedManifestData = try await manifestData
-        let loadedScriptData = try await scriptData
-        let package = try JSONDecoder().decode(GamePackage.self, from: loadedManifestData)
-        guard let manifest = String(data: loadedManifestData, encoding: .utf8),
-              let script = String(data: loadedScriptData, encoding: .utf8) else {
-            throw GamePackageError.invalidScript
+        guard let data = try? await fetch(manifestURL),
+              (try? makePackage(manifestData: data, script: "")) != nil else {
+            return
+        }
+        UserDefaults.standard.set(data, forKey: Self.cachedManifestKey)
+    }
+
+    private func loadBundledPackage() throws -> LoadedGamePackage {
+        guard let manifestURL = Bundle.main.url(forResource: "manifest", withExtension: "json"),
+              let scriptURL = Bundle.main.url(forResource: "game", withExtension: "luau"),
+              let manifestData = try? Data(contentsOf: manifestURL),
+              let scriptData = try? Data(contentsOf: scriptURL),
+              let script = String(data: scriptData, encoding: .utf8) else {
+            throw GamePackageError.missingBundledPackage
+        }
+        return try makePackage(manifestData: manifestData, script: script)
+    }
+
+    private func cachedManifestData() -> Data? {
+        guard let data = UserDefaults.standard.data(forKey: Self.cachedManifestKey),
+              data.count <= Self.maximumManifestBytes else { return nil }
+        return data
+    }
+
+    private func makePackage(manifestData: Data, script: String) throws -> LoadedGamePackage {
+        guard manifestData.count <= Self.maximumManifestBytes,
+              let manifest = String(data: manifestData, encoding: .utf8) else {
+            throw GamePackageError.invalidBundledPackage
+        }
+        let package: GamePackage
+        do {
+            package = try JSONDecoder().decode(GamePackage.self, from: manifestData)
+        } catch {
+            throw GamePackageError.invalidBundledPackage
         }
         guard package.worldDefinition(named: package.startWorld) != nil else {
             throw GamePackageError.missingWorld(package.startWorld)
@@ -190,9 +243,14 @@ struct GamePackageLoader {
     }
 
     private func fetch(_ url: URL) async throws -> Data {
-        let (data, response) = try await URLSession.shared.data(from: url)
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 5
+        let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw GamePackageError.httpFailure((response as? HTTPURLResponse)?.statusCode ?? 0)
+        }
+        guard data.count <= Self.maximumManifestBytes else {
+            throw GamePackageError.invalidBundledPackage
         }
         return data
     }

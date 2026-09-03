@@ -35,9 +35,14 @@ final class GameViewModel: ObservableObject {
     @Published private(set) var usernameStatus = "Choose a name other players can find you by."
     @Published private(set) var settingsRoomState: UInt8 = 0
     @Published private(set) var usernameEditorOpen = false
+    @Published private(set) var remotePlayerNames: [String: String] = [:]
+    @Published private(set) var blockedPlayerIDs: Set<String>
+    @Published private(set) var moderationNotice: ModerationNotice?
+    @Published var safetyCenterOpen = false
     @Published var sprinting = false
 
     private let loader = GamePackageLoader()
+    private let blockedPlayerIDsKey = "cubacadabra.blocked-player-ids"
     private var engine: EngineBridge?
     private var lastTick: Date?
     private var runtimeWorldIDs: [String] = []
@@ -50,8 +55,15 @@ final class GameViewModel: ObservableObject {
     private var lastLookTranslation = CGSize.zero
     private var lastMagnification: CGFloat = 1
     private var noticeTask: Task<Void, Never>?
+    private var moderationNoticeTask: Task<Void, Never>?
     private var remotePlayers: [String: EngineRemotePlayer] = [:]
     private var connectedWorldID: String?
+
+    init() {
+        let storedIDs = UserDefaults.standard.stringArray(forKey: blockedPlayerIDsKey) ?? []
+        blockedPlayerIDs = Set(storedIDs)
+    }
+
     private lazy var worldSocket = WorldSocketClient(
         onStateChange: { [weak self] state in
             self?.connectionState = state
@@ -95,6 +107,10 @@ final class GameViewModel: ObservableObject {
             lastTick = nil
             isLoading = false
             connectWorld(worldID)
+            Task { [weak self] in
+                await loader.refreshManifest()
+                await self?.refreshBlockedPlayers()
+            }
         } catch {
             isLoading = false
             errorMessage = error.localizedDescription
@@ -231,14 +247,100 @@ final class GameViewModel: ObservableObject {
         connectedWorldID = nil
     }
 
+    var activeRemotePlayers: [RemotePlayerSummary] {
+        remotePlayerNames.keys
+            .filter { !blockedPlayerIDs.contains($0) }
+            .sorted()
+            .map { playerID in
+                RemotePlayerSummary(
+                    id: playerID,
+                    username: remotePlayerNames[playerID] ?? defaultPlayerLabel(playerID)
+                )
+            }
+    }
+
+    func blockPlayer(_ player: RemotePlayerSummary) {
+        guard !blockedPlayerIDs.contains(player.id) else { return }
+        blockedPlayerIDs.insert(player.id)
+        persistBlockedPlayerIDs()
+        remotePlayers.removeValue(forKey: player.id)
+        remotePlayerNames.removeValue(forKey: player.id)
+        showModerationNotice("\(player.username) is blocked. You can unblock them in Players & Safety.")
+        let service = moderationService
+        Task { [weak self] in
+            do {
+                try await service.blockPlayer(player.id)
+            } catch {
+                guard let self else { return }
+                blockedPlayerIDs.remove(player.id)
+                persistBlockedPlayerIDs()
+                showModerationNotice("That block could not be saved. Try again.")
+            }
+        }
+    }
+
+    func unblockPlayer(_ playerID: String) {
+        guard blockedPlayerIDs.remove(playerID) != nil else { return }
+        persistBlockedPlayerIDs()
+        showModerationNotice("Player unblocked.")
+        let service = moderationService
+        Task { [weak self] in
+            do {
+                try await service.unblockPlayer(playerID)
+            } catch {
+                guard let self else { return }
+                blockedPlayerIDs.insert(playerID)
+                persistBlockedPlayerIDs()
+                showModerationNotice("That unblock could not be saved. Try again.")
+            }
+        }
+    }
+
+    func reportPlayer(_ player: RemotePlayerSummary, reason: ReportReason, details: String) {
+        let service = moderationService
+        Task { [weak self] in
+            do {
+                try await service.reportPlayer(
+                    playerID: player.id,
+                    username: player.username,
+                    reason: reason.rawValue,
+                    details: details,
+                    worldID: worldID
+                )
+            } catch {
+                self?.showModerationNotice("Report could not be sent. Contact support@cubacadabra.com.")
+            }
+        }
+    }
+
+    private var moderationService: ModerationService {
+        ModerationService(playerID: worldSocket.playerID)
+    }
+
+    private func refreshBlockedPlayers() async {
+        guard let serverIDs = try? await moderationService.fetchBlockedPlayerIDs() else { return }
+        blockedPlayerIDs.formUnion(serverIDs)
+        persistBlockedPlayerIDs()
+        remotePlayers = remotePlayers.filter { !blockedPlayerIDs.contains($0.key) }
+        remotePlayerNames = remotePlayerNames.filter { !blockedPlayerIDs.contains($0.key) }
+    }
+
     private func handlePresenceEvent(_ event: WorldPresenceEvent) {
+        guard !blockedPlayerIDs.contains(event.playerID) else { return }
         if event.type == "player_leave" {
             remotePlayers.removeValue(forKey: event.playerID)
+            remotePlayerNames.removeValue(forKey: event.playerID)
+        } else if event.type == "player_join" || event.type == "player_name" {
+            remotePlayerNames[event.playerID] = event.username ?? defaultPlayerLabel(event.playerID)
         }
         showPresenceEvent(event)
     }
 
     private func handleMovementEvent(_ event: WorldMovementEvent) {
+        guard !blockedPlayerIDs.contains(event.playerID) else { return }
+        if remotePlayerNames[event.playerID] == nil {
+            remotePlayerNames[event.playerID] = defaultPlayerLabel(event.playerID)
+        }
         remotePlayers[event.playerID] = EngineRemotePlayer(
             position: event.position,
             yaw: event.yaw,
@@ -277,9 +379,11 @@ final class GameViewModel: ObservableObject {
             engine?.setUsername(nextUsername)
             usernameEditorOpen = false
         } else if event.type == "username_error" {
-            usernameStatus = event.code == "username_taken"
-                ? "That name is already in use. Try another."
-                : "That name could not be saved. Try again."
+            usernameStatus = switch event.code {
+            case "username_taken": "That name is already in use. Try another."
+            case "username_not_allowed": "Choose a different name."
+            default: "That name could not be saved. Try again."
+            }
         }
     }
 
@@ -293,8 +397,29 @@ final class GameViewModel: ObservableObject {
         guard networkWorldID != connectedWorldID else { return }
         connectedWorldID = networkWorldID
         remotePlayers.removeAll()
+        remotePlayerNames.removeAll()
         engine?.setRemotePlayers([])
         worldSocket.connect(worldID: networkWorldID)
+    }
+
+    private func persistBlockedPlayerIDs() {
+        UserDefaults.standard.set(blockedPlayerIDs.sorted(), forKey: blockedPlayerIDsKey)
+    }
+
+    private func showModerationNotice(_ message: String) {
+        let notice = ModerationNotice(message: message)
+        moderationNotice = notice
+        moderationNoticeTask?.cancel()
+        moderationNoticeTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled, self?.moderationNotice?.id == notice.id else { return }
+            self?.moderationNotice = nil
+        }
+    }
+
+    func dismissModerationNotice() {
+        moderationNoticeTask?.cancel()
+        moderationNotice = nil
     }
 
     private func defaultPlayerLabel(_ playerID: String) -> String {
@@ -308,6 +433,32 @@ struct PresenceNotice: Identifiable, Equatable {
     let id = UUID()
     let message: String
     let joined: Bool
+}
+
+struct ModerationNotice: Identifiable, Equatable {
+    let id = UUID()
+    let message: String
+}
+
+struct RemotePlayerSummary: Identifiable, Equatable {
+    let id: String
+    let username: String
+}
+
+enum ReportReason: String, CaseIterable, Identifiable {
+    case inappropriateName = "inappropriate_name"
+    case harassment
+    case other
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .inappropriateName: return "Inappropriate name"
+        case .harassment: return "Harassment or abuse"
+        case .other: return "Other safety concern"
+        }
+    }
 }
 
 struct GameSurface: View {
@@ -346,6 +497,14 @@ struct GameSurface: View {
                             .padding(.top, 10)
                             .transition(.move(edge: .top).combined(with: .opacity))
                     }
+                    if let notice = model.moderationNotice {
+                        ModerationNoticeView(notice: notice) {
+                            model.dismissModerationNotice()
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 10)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                    }
                 }
                 Spacer()
                 GameControls(model: model)
@@ -361,6 +520,9 @@ struct GameSurface: View {
             }
         }
         .background(Color.black)
+        .sheet(isPresented: $model.safetyCenterOpen) {
+            SafetyCenterView(model: model)
+        }
     }
 }
 
@@ -493,6 +655,16 @@ struct GameHeader: View {
                 }
                 Spacer(minLength: 12)
                 VStack(alignment: .trailing, spacing: 4) {
+                    Button {
+                        model.safetyCenterOpen = true
+                    } label: {
+                        Image(systemName: "person.2.badge.gearshape")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .background(.white.opacity(0.14), in: Circle())
+                    }
+                    .accessibilityLabel("Players and safety")
                     Text(model.worldID == "lobby" ? "LOBBY" : "SESSION")
                         .font(.system(size: 11, weight: .bold, design: .rounded))
                         .tracking(1.4)
@@ -574,6 +746,221 @@ private struct PresenceNoticeView: View {
         .frame(maxWidth: 390)
         .frame(maxWidth: .infinity)
         .accessibilityLabel(notice.message)
+    }
+}
+
+private struct ModerationNoticeView: View {
+    let notice: ModerationNotice
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checkmark.shield.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.green)
+            Text(notice.message)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+            Spacer(minLength: 0)
+            Button(action: dismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .frame(width: 32, height: 32)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss safety message")
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 44)
+        .background(.regularMaterial, in: Capsule())
+        .overlay(Capsule().stroke(.primary.opacity(0.12), lineWidth: 1))
+        .frame(maxWidth: 430)
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .contain)
+    }
+}
+
+private struct SafetyCenterView: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var model: GameViewModel
+    @State private var reportTarget: RemotePlayerSummary?
+    @State private var blockTarget: RemotePlayerSummary?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Text("Use Players & Safety to report a concern, block another player, or manage people you have blocked. Reports are reviewed by the Cubacadabra team.")
+                        .font(.system(.subheadline, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } header: {
+                    Text("Community safety")
+                }
+
+                Section("Players here") {
+                    if model.activeRemotePlayers.isEmpty {
+                        Text("No other players are visible right now.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(model.activeRemotePlayers) { player in
+                            PlayerSafetyRow(player: player) {
+                                reportTarget = player
+                            } block: {
+                                blockTarget = player
+                            }
+                        }
+                    }
+                }
+
+                Section("Blocked on this device") {
+                    if model.blockedPlayerIDs.isEmpty {
+                        Text("No blocked players.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(model.blockedPlayerIDs.sorted(), id: \.self) { playerID in
+                            HStack(spacing: 12) {
+                                Image(systemName: "hand.raised.fill")
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 28)
+                                Text("Player \(String(playerID.suffix(4)).uppercased())")
+                                    .font(.system(.body, design: .rounded, weight: .semibold))
+                                Spacer()
+                                Button("Unblock") {
+                                    model.unblockPlayer(playerID)
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                            .frame(minHeight: 44)
+                        }
+                    }
+                }
+
+                Section("Legal and support") {
+                    Link(destination: AppLinks.privacy) {
+                        Label("Privacy Policy", systemImage: "lock.shield.fill")
+                    }
+                    Link(destination: AppLinks.terms) {
+                        Label("Terms of Use", systemImage: "doc.text.fill")
+                    }
+                    Link(destination: AppLinks.support) {
+                        Label("Contact support", systemImage: "envelope.fill")
+                    }
+                }
+            }
+            .navigationTitle("Players & Safety")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .sheet(item: $reportTarget) { player in
+            ReportPlayerView(model: model, player: player)
+        }
+        .confirmationDialog(
+            "Block \(blockTarget?.username ?? "this player")?",
+            isPresented: Binding(
+                get: { blockTarget != nil },
+                set: { if !$0 { blockTarget = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Block", role: .destructive) {
+                if let blockTarget {
+                    model.blockPlayer(blockTarget)
+                }
+                blockTarget = nil
+            }
+            Button("Cancel", role: .cancel) { blockTarget = nil }
+        } message: {
+            Text("You will no longer see this player or their presence. You can unblock them later.")
+        }
+    }
+}
+
+private struct PlayerSafetyRow: View {
+    let player: RemotePlayerSummary
+    let report: () -> Void
+    let block: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "person.fill")
+                .foregroundStyle(.secondary)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(player.username)
+                    .font(.system(.body, design: .rounded, weight: .semibold))
+                Text("In this world")
+                    .font(.system(.caption, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Menu {
+                Button("Report player", systemImage: "exclamationmark.bubble") { report() }
+                Button("Block player", systemImage: "hand.raised.fill", role: .destructive) { block() }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.system(size: 20, weight: .semibold))
+                    .frame(width: 44, height: 44)
+            }
+            .accessibilityLabel("Actions for \(player.username)")
+        }
+        .frame(minHeight: 52)
+    }
+}
+
+private struct ReportPlayerView: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var model: GameViewModel
+    let player: RemotePlayerSummary
+    @State private var reason: ReportReason = .inappropriateName
+    @State private var details = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text("Report \(player.username)")
+                        .font(.system(.headline, design: .rounded, weight: .bold))
+                    Text("Tell us what happened. Do not include private information.")
+                        .font(.system(.subheadline, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Reason") {
+                    Picker("Reason", selection: $reason) {
+                        ForEach(ReportReason.allCases) { reason in
+                            Text(reason.title).tag(reason)
+                        }
+                    }
+                }
+
+                Section("Details (optional)") {
+                    TextField("What should we review?", text: $details, axis: .vertical)
+                        .lineLimit(3...6)
+                        .textInputAutocapitalization(.sentences)
+                }
+
+                Section {
+                    Button("Send Report") {
+                        model.reportPlayer(player, reason: reason, details: details)
+                        dismiss()
+                    }
+                    .frame(maxWidth: .infinity, alignment: .center)
+                }
+            }
+            .navigationTitle("Report Player")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
     }
 }
 
