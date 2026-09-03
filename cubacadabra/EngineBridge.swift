@@ -16,6 +16,13 @@ struct EngineRemotePlayer {
     var sprinting: Bool
 }
 
+struct EngineBuildBlock {
+    var position: SIMD3<Float>
+    var size: SIMD3<Float>
+    var color: UInt32
+    var rotation: UInt8
+}
+
 struct EngineAgent {
     var position: SIMD3<Float>
     var yaw: Float
@@ -115,6 +122,24 @@ final class EngineBridge {
         }
     }
 
+    func setBuildBlocks(_ blocks: [EngineBuildBlock]) {
+        engine_set_build_block_count(handle, UInt(blocks.count))
+        for (index, block) in blocks.enumerated() {
+            engine_set_build_block(
+                handle,
+                UInt(index),
+                block.position.x,
+                block.position.y,
+                block.position.z,
+                block.size.x,
+                block.size.y,
+                block.size.z,
+                block.color,
+                block.rotation
+            )
+        }
+    }
+
     @discardableResult
     func setUsername(_ username: String) -> Bool {
         let bytes = Array(username.utf8)
@@ -130,6 +155,11 @@ final class EngineBridge {
 
     func step(_ delta: Float) {
         engine_step(handle, delta)
+    }
+
+    @discardableResult
+    func startWorld(_ index: Int) -> Bool {
+        engine_start_world(handle, UInt(index)) != 0
     }
 
     func sync(renderer: OpaquePointer) {

@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import SwiftUI
+import simd
 
 struct ContentView: View {
     @StateObject private var model = GameViewModel()
@@ -73,6 +74,15 @@ final class GameViewModel: ObservableObject {
     @Published private(set) var remotePlayerNames: [String: String] = [:]
     @Published private(set) var blockedPlayerIDs: Set<String>
     @Published private(set) var moderationNotice: ModerationNotice?
+    @Published private(set) var buildPrompt = ""
+    @Published private(set) var buildPhase = "build"
+    @Published private(set) var buildBlockCount = 0
+    @Published private(set) var buildBlocks: [WorldBuildBlock] = []
+    @Published private(set) var lobbyLaunchStartsAt: Date?
+    private var lobbyLaunchClockOffset: TimeInterval = 0
+    @Published var buildTool = "place"
+    @Published var buildShape = "cube"
+    @Published var buildColor = "coral"
     @Published private(set) var hasEnteredGame = false
     @Published var sprinting = false
 
@@ -93,6 +103,7 @@ final class GameViewModel: ObservableObject {
     private var moderationNoticeTask: Task<Void, Never>?
     private var remotePlayers: [String: EngineRemotePlayer] = [:]
     private var connectedWorldID: String?
+    private var pendingSessionWorldID: String?
     private var gamePaused = false
 
     init() {
@@ -112,6 +123,9 @@ final class GameViewModel: ObservableObject {
         },
         onUsername: { [weak self] event in
             self?.handleUsernameEvent(event)
+        },
+        onExperience: { [weak self] event in
+            self?.handleExperienceEvent(event)
         }
     )
 
@@ -456,13 +470,106 @@ final class GameViewModel: ObservableObject {
         }
     }
 
+    private func handleExperienceEvent(_ event: WorldExperienceEvent) {
+        if event.type == "experience_launch",
+           event.playerIDs.contains(worldSocket.playerID),
+           let sessionWorldID = event.sessionWorldID,
+           let sessionIndex = runtimeWorldIDs.firstIndex(of: "real-game") {
+            pendingSessionWorldID = sessionWorldID
+            engine?.startWorld(sessionIndex)
+            return
+        }
+        if event.type == "experience_state", event.kind == "lobby" {
+            lobbyLaunchStartsAt = event.startsAt.map { Date(timeIntervalSince1970: Double($0) / 1000) }
+            lobbyLaunchClockOffset = Date().timeIntervalSince1970 - Double(event.serverNow ?? Int64(Date().timeIntervalSince1970 * 1000)) / 1000
+            return
+        }
+        guard event.type == "experience_state", event.kind == "build" else { return }
+        buildPhase = event.phase ?? "build"
+        buildPrompt = event.prompt ?? "Build together."
+        buildBlockCount = event.blockCount ?? 0
+        buildBlocks = event.blocks
+        engine?.setBuildBlocks(event.blocks.map(engineBlock))
+    }
+
+    private func engineBlock(_ block: WorldBuildBlock) -> EngineBuildBlock {
+        let size: SIMD3<Float> = switch block.shape {
+        case "beam": SIMD3(3, 1, 1)
+        case "slab": SIMD3(2, 0.5, 2)
+        default: SIMD3(repeating: 1)
+        }
+        let colors: [String: UInt32] = ["coral": 0xed725b, "butter": 0xf2c764, "periwinkle": 0x7898dc, "ink": 0x264b4b, "paper": 0xf6f1e7]
+        return EngineBuildBlock(
+            position: SIMD3(block.x, block.y, block.z),
+            size: size,
+            color: colors[block.color] ?? colors["coral"]!,
+            rotation: UInt8(block.rotation)
+        )
+    }
+
+    func cycleBuildShape() {
+        let shapes = ["cube", "beam", "slab"]
+        buildShape = shapes[((shapes.firstIndex(of: buildShape) ?? 0) + 1) % shapes.count]
+    }
+
+    func cycleBuildColor() {
+        let colors = ["coral", "butter", "periwinkle", "ink", "paper"]
+        buildColor = colors[(colors.firstIndex(of: buildColor).map { ($0 + 1) % colors.count } ?? 0)]
+    }
+
+    func performBuildAction() {
+        guard worldID == "real-game", buildPhase == "build", let frame else { return }
+        let shapes: [String: SIMD3<Float>] = ["cube": SIMD3(repeating: 1), "beam": SIMD3(3, 1, 1), "slab": SIMD3(2, 0.5, 2)]
+        let size = shapes[buildShape] ?? SIMD3(repeating: 1)
+        let target = SIMD3(
+            round((frame.player.position.x + sin(frame.camera.x) * 4) * 2) / 2,
+            size.y / 2,
+            round((frame.player.position.z - cos(frame.camera.x) * 4) * 2) / 2
+        )
+        if buildTool == "place" {
+            worldSocket.sendExperience("build_action", payload: ["action": "place", "block": ["x": target.x, "y": target.y, "z": target.z, "shape": buildShape, "color": buildColor]])
+            return
+        }
+        guard let nearest = buildBlocks.min(by: { lhs, rhs in
+            distance(SIMD3(lhs.x, lhs.y, lhs.z), target) < distance(SIMD3(rhs.x, rhs.y, rhs.z), target)
+        }), distance(SIMD3(nearest.x, nearest.y, nearest.z), target) < 2.1 else { return }
+        var payload: [String: Any] = ["action": buildTool, "id": nearest.id]
+        if buildTool == "recolor" { payload["color"] = buildColor }
+        worldSocket.sendExperience("build_action", payload: payload)
+    }
+
+    func saveBuild() { worldSocket.sendExperience("build_save") }
+
+    func returnToLobby() {
+        pendingSessionWorldID = nil
+        if let index = runtimeWorldIDs.firstIndex(of: "lobby") { engine?.startWorld(index) }
+    }
+
+    func lobbyLaunchStatus(for pad: LaunchPadDefinition, live: EnginePad?) -> String {
+        guard pad.enabled else { return pad.availabilityLabel }
+        guard let startsAt = lobbyLaunchStartsAt else { return status(for: live) }
+        let remaining = startsAt.timeIntervalSince1970 - (Date().timeIntervalSince1970 - lobbyLaunchClockOffset)
+        return remaining > 0 ? String(format: "%.1fs", remaining) : "LAUNCHING"
+    }
+
+    private func status(for pad: EnginePad?) -> String {
+        guard let pad else { return "WAITING" }
+        if pad.phase == 2 { return "LAUNCHING" }
+        if pad.seconds > 0 { return String(format: "%.1fs · %d", pad.seconds, pad.occupants) }
+        return pad.occupants == 0 ? "WAITING" : "ASSEMBLING"
+    }
+
     private func updateSettingsRoomState(_ roomState: UInt8) {
         settingsRoomState = roomState
         if roomState == 0 { usernameEditorOpen = false }
     }
 
     private func connectWorld(_ visualWorldID: String) {
-        let networkWorldID = visualWorldID == "settings" ? "lobby" : visualWorldID
+        let networkWorldID = visualWorldID == "settings"
+            ? "lobby"
+            : visualWorldID == "real-game" && pendingSessionWorldID != nil
+                ? pendingSessionWorldID!
+                : visualWorldID
         guard networkWorldID != connectedWorldID else { return }
         connectedWorldID = networkWorldID
         remotePlayers.removeAll()
@@ -843,6 +950,11 @@ struct GameSurface: View {
                     }
                 }
                 Spacer()
+                if model.worldID == "real-game" {
+                    BuildToolbar(model: model)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 10)
+                }
                 GameControls(model: model)
                     .padding(.horizontal, 20)
                     .padding(.bottom, 18)
@@ -856,6 +968,77 @@ struct GameSurface: View {
             }
         }
         .background(Color.black)
+    }
+}
+
+private struct BuildToolbar: View {
+    @ObservedObject var model: GameViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(model.buildPhase == "tour" ? "TOUR MODE" : "BUILD TOGETHER")
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .tracking(1.4)
+                .foregroundStyle(.secondary)
+            Text(model.buildPhase == "tour" ? "Walk through what you made together." : model.buildPrompt)
+                .font(.system(size: 17, weight: .bold, design: .rounded))
+                .lineLimit(2)
+            if model.buildPhase == "build" {
+                HStack(spacing: 7) {
+                    ForEach(["place", "rotate", "remove", "recolor"], id: \.self) { tool in
+                        Button(tool.uppercased()) { model.buildTool = tool }
+                            .buttonStyle(BuildToolButtonStyle(active: model.buildTool == tool))
+                    }
+                }
+                HStack(spacing: 8) {
+                    Button("SHAPE · \(model.buildShape.uppercased())") { model.cycleBuildShape() }
+                        .buttonStyle(BuildToolButtonStyle())
+                    Button("COLOR · \(model.buildColor.uppercased())") { model.cycleBuildColor() }
+                        .buttonStyle(BuildToolButtonStyle())
+                    Spacer()
+                    Button("USE TOOL") { model.performBuildAction() }
+                        .buttonStyle(BuildToolButtonStyle(active: true))
+                }
+                Text("Tap USE TOOL while facing the build area.")
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+            HStack {
+                Text("\(model.buildBlockCount) blocks")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if model.buildPhase == "build" {
+                    Button("SAVE & TOUR") { model.saveBuild() }
+                        .buttonStyle(BuildToolButtonStyle(active: true))
+                } else {
+                    Button("RETURN TO LOBBY") { model.returnToLobby() }
+                        .buttonStyle(BuildToolButtonStyle())
+                }
+            }
+        }
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(.primary.opacity(0.12), lineWidth: 1))
+        .frame(maxWidth: 520)
+        .frame(maxWidth: .infinity)
+    }
+}
+
+private struct BuildToolButtonStyle: ButtonStyle {
+    let active: Bool
+
+    init(active: Bool = false) { self.active = active }
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 9, weight: .bold, design: .rounded))
+            .tracking(0.8)
+            .foregroundStyle(active ? Color.white : Color.primary)
+            .frame(minHeight: 38)
+            .padding(.horizontal, 10)
+            .background(active ? Color.accentColor : Color.primary.opacity(0.08), in: Capsule())
+            .opacity(configuration.isPressed ? 0.72 : 1)
     }
 }
 
@@ -1027,13 +1210,20 @@ struct GameHeader: View {
                             Text(pad.code)
                                 .font(.system(size: 10, weight: .bold, design: .rounded))
                                 .tracking(0.8)
-                            Text(status(for: live))
+                            Text(model.lobbyLaunchStatus(for: pad, live: live))
                                 .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                .foregroundStyle(.white.opacity(0.78))
+                                .foregroundStyle(.white.opacity(pad.enabled ? 0.78 : 0.48))
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(10)
-                        .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .background(.white.opacity(pad.enabled ? 0.09 : 0.045), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay {
+                            if !pad.enabled {
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(.white.opacity(0.08), style: StrokeStyle(lineWidth: 1, dash: [3, 4]))
+                            }
+                        }
+                        .opacity(pad.enabled ? 1 : 0.72)
                     }
                 }
             }

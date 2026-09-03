@@ -19,6 +19,19 @@ void engine_set_input(
 );
 void engine_step(CubacadabraEngine *engine, float delta);
 void engine_reset_view(CubacadabraEngine *engine);
+void engine_set_build_block_count(CubacadabraEngine *engine, uintptr_t count);
+void engine_set_build_block(
+    CubacadabraEngine *engine,
+    uintptr_t index,
+    float x,
+    float y,
+    float z,
+    float width,
+    float height,
+    float depth,
+    uint32_t color,
+    uint8_t rotation
+);
 void engine_set_launch_pad(
     CubacadabraEngine *engine,
     uintptr_t index,

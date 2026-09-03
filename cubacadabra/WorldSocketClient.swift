@@ -36,6 +36,29 @@ struct WorldMovementEvent {
     let sprinting: Bool
 }
 
+struct WorldExperienceEvent {
+    let type: String
+    let kind: String?
+    let phase: String?
+    let prompt: String?
+    let sessionWorldID: String?
+    let playerIDs: [String]
+    let startsAt: Int64?
+    let serverNow: Int64?
+    let blockCount: Int?
+    let blocks: [WorldBuildBlock]
+}
+
+struct WorldBuildBlock: Decodable, Identifiable {
+    let id: String
+    let x: Float
+    let y: Float
+    let z: Float
+    let rotation: Int
+    let shape: String
+    let color: String
+}
+
 @MainActor
 final class WorldSocketClient {
     fileprivate static let moveSendInterval: TimeInterval = 1.0 / 12.0
@@ -50,6 +73,7 @@ final class WorldSocketClient {
     private let onEvent: (WorldPresenceEvent) -> Void
     private let onMove: (WorldMovementEvent) -> Void
     private let onUsername: (WorldUsernameEvent) -> Void
+    private let onExperience: (WorldExperienceEvent) -> Void
     private var socketTask: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var reconnectTask: Task<Void, Never>?
@@ -66,7 +90,8 @@ final class WorldSocketClient {
         onStateChange: @escaping (WorldConnectionState) -> Void,
         onEvent: @escaping (WorldPresenceEvent) -> Void,
         onMove: @escaping (WorldMovementEvent) -> Void,
-        onUsername: @escaping (WorldUsernameEvent) -> Void
+        onUsername: @escaping (WorldUsernameEvent) -> Void,
+        onExperience: @escaping (WorldExperienceEvent) -> Void
     ) {
         playerID = Self.loadPlayerID()
         username = Self.loadUsername(for: playerID)
@@ -75,6 +100,7 @@ final class WorldSocketClient {
         self.onEvent = onEvent
         self.onMove = onMove
         self.onUsername = onUsername
+        self.onExperience = onExperience
     }
 
     func connect(worldID nextWorldID: String) {
@@ -195,6 +221,21 @@ final class WorldSocketClient {
             ))
             return
         }
+        if event.type == "experience_state" || event.type == "experience_launch" {
+            onExperience(WorldExperienceEvent(
+                type: event.type,
+                kind: event.kind,
+                phase: event.phase,
+                prompt: event.prompt,
+                sessionWorldID: event.sessionWorldID,
+                playerIDs: event.playerIDs ?? [],
+                startsAt: event.startsAt,
+                serverNow: event.serverNow,
+                blockCount: event.blocks?.count,
+                blocks: event.blocks ?? []
+            ))
+            return
+        }
         guard event.type == "player_join" || event.type == "player_leave" || event.type == "player_name",
               let eventPlayerID = event.id,
               eventPlayerID != playerID else { return }
@@ -277,6 +318,16 @@ final class WorldSocketClient {
         lastSentMove = move
     }
 
+    func sendExperience(_ type: String, payload: [String: Any] = [:]) {
+        guard !stopped, let socketTask, socketTask.state == .running else { return }
+        var message: [String: Any] = ["type": type]
+        payload.forEach { message[$0.key] = $0.value }
+        guard JSONSerialization.isValidJSONObject(message),
+              let data = try? JSONSerialization.data(withJSONObject: message),
+              let text = String(data: data, encoding: .utf8) else { return }
+        socketTask.send(.string(text)) { _ in }
+    }
+
     private func scheduleReconnect(generation expectedGeneration: Int) {
         guard !stopped, expectedGeneration == generation else { return }
         reconnectAttempt += 1
@@ -354,6 +405,21 @@ private struct WorldEventEnvelope: Decodable {
     let sprinting: Bool?
     let username: String?
     let code: String?
+    let kind: String?
+    let phase: String?
+    let prompt: String?
+    let sessionWorldID: String?
+    let playerIDs: [String]?
+    let startsAt: Int64?
+    let serverNow: Int64?
+    let blocks: [WorldBuildBlock]?
+
+    enum CodingKeys: String, CodingKey {
+        case type, id, x, y, z, yaw, moving, sprinting, username, code, kind, phase, prompt
+        case sessionWorldID = "sessionWorldId"
+        case playerIDs = "playerIds"
+        case startsAt, serverNow, blocks
+    }
 }
 
 private struct WorldMoveMessage: Encodable {

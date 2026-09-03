@@ -83,6 +83,26 @@ struct LaunchPadDefinition: Decodable, Identifiable {
     let radius: Float
     let countdown: Float
     let destinationWorld: String?
+    let enabled: Bool
+    let availabilityLabel: String
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        code = try container.decode(String.self, forKey: .code)
+        label = try container.decode(String.self, forKey: .label)
+        position = try container.decode([Float].self, forKey: .position)
+        color = try container.decode(String.self, forKey: .color)
+        radius = try container.decodeIfPresent(Float.self, forKey: .radius) ?? 2.7
+        countdown = try container.decodeIfPresent(Float.self, forKey: .countdown) ?? 8
+        destinationWorld = try container.decodeIfPresent(String.self, forKey: .destinationWorld)
+        enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+        availabilityLabel = try container.decodeIfPresent(String.self, forKey: .availabilityLabel) ?? "COMING SOON"
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, code, label, position, color, radius, countdown, destinationWorld, enabled, availabilityLabel
+    }
 }
 
 struct BlockDefinition: Decodable {
