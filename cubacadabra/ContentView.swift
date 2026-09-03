@@ -440,7 +440,7 @@ struct ModerationNotice: Identifiable, Equatable {
     let message: String
 }
 
-struct RemotePlayerSummary: Identifiable, Hashable {
+struct RemotePlayerSummary: Identifiable, Equatable {
     let id: String
     let username: String
 }
@@ -783,9 +783,17 @@ private struct ModerationNoticeView: View {
 
 private struct SafetyCenterView: View {
     @Environment(\.dismiss) private var dismiss
-    @ObservedObject var model: GameViewModel
+    let model: GameViewModel
+    @State private var activePlayers: [RemotePlayerSummary]
+    @State private var blockedPlayerIDs: Set<String>
     @State private var reportTarget: RemotePlayerSummary?
     @State private var blockTarget: RemotePlayerSummary?
+
+    init(model: GameViewModel) {
+        self.model = model
+        _activePlayers = State(initialValue: model.activeRemotePlayers)
+        _blockedPlayerIDs = State(initialValue: model.blockedPlayerIDs)
+    }
 
     var body: some View {
         NavigationStack {
@@ -800,11 +808,11 @@ private struct SafetyCenterView: View {
                 }
 
                 Section("Players here") {
-                    if model.activeRemotePlayers.isEmpty {
+                    if activePlayers.isEmpty {
                         Text("No other players are visible right now.")
                             .foregroundStyle(.secondary)
                     } else {
-                        ForEach(model.activeRemotePlayers) { player in
+                        ForEach(activePlayers) { player in
                             PlayerSafetyRow(player: player) {
                                 reportTarget = player
                             } block: {
@@ -815,11 +823,11 @@ private struct SafetyCenterView: View {
                 }
 
                 Section("Blocked on this device") {
-                    if model.blockedPlayerIDs.isEmpty {
+                    if blockedPlayerIDs.isEmpty {
                         Text("No blocked players.")
                             .foregroundStyle(.secondary)
                     } else {
-                        ForEach(model.blockedPlayerIDs.sorted(), id: \.self) { playerID in
+                        ForEach(blockedPlayerIDs.sorted(), id: \.self) { playerID in
                             HStack(spacing: 12) {
                                 Image(systemName: "hand.raised.fill")
                                     .foregroundStyle(.secondary)
@@ -856,36 +864,43 @@ private struct SafetyCenterView: View {
                     Button("Done") { dismiss() }
                 }
             }
-        }
-        .navigationDestination(
-            isPresented: Binding(
-                get: { reportTarget != nil },
-                set: { if !$0 { reportTarget = nil } }
-            )
-        ) {
-            if let player = reportTarget {
-                ReportPlayerView(player: player) { reason, details in
-                    model.reportPlayer(player, reason: reason, details: details)
+            .navigationDestination(
+                isPresented: Binding(
+                    get: { reportTarget != nil },
+                    set: { if !$0 { reportTarget = nil } }
+                )
+            ) {
+                if let player = reportTarget {
+                    ReportPlayerView(player: player) { reason, details in
+                        model.reportPlayer(player, reason: reason, details: details)
+                    }
                 }
             }
-        }
-        .confirmationDialog(
-            "Block \(blockTarget?.username ?? "this player")?",
-            isPresented: Binding(
-                get: { blockTarget != nil },
-                set: { if !$0 { blockTarget = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Block", role: .destructive) {
-                if let blockTarget {
-                    model.blockPlayer(blockTarget)
+            .confirmationDialog(
+                "Block \(blockTarget?.username ?? "this player")?",
+                isPresented: Binding(
+                    get: { blockTarget != nil },
+                    set: { if !$0 { blockTarget = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Block", role: .destructive) {
+                    if let blockTarget {
+                        model.blockPlayer(blockTarget)
+                    }
+                    blockTarget = nil
                 }
-                blockTarget = nil
+                Button("Cancel", role: .cancel) { blockTarget = nil }
+            } message: {
+                Text("You will no longer see this player or their presence. You can unblock them later.")
             }
-            Button("Cancel", role: .cancel) { blockTarget = nil }
-        } message: {
-            Text("You will no longer see this player or their presence. You can unblock them later.")
+        }
+        .onReceive(model.$remotePlayerNames) { _ in
+            activePlayers = model.activeRemotePlayers
+        }
+        .onReceive(model.$blockedPlayerIDs) { playerIDs in
+            blockedPlayerIDs = playerIDs
+            activePlayers = model.activeRemotePlayers
         }
     }
 }
