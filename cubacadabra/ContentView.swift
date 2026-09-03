@@ -73,6 +73,7 @@ final class GameViewModel: ObservableObject {
     @Published private(set) var remotePlayerNames: [String: String] = [:]
     @Published private(set) var blockedPlayerIDs: Set<String>
     @Published private(set) var moderationNotice: ModerationNotice?
+    @Published private(set) var hasEnteredGame = false
     @Published var sprinting = false
 
     private let loader = GamePackageLoader()
@@ -157,6 +158,7 @@ final class GameViewModel: ObservableObject {
         engine = nil
         package = nil
         frame = nil
+        hasEnteredGame = false
         Task { await load() }
     }
 
@@ -168,9 +170,12 @@ final class GameViewModel: ObservableObject {
         }
         let delta = Float(min(max(date.timeIntervalSince(lastTick), 0), 0.05))
         self.lastTick = date
+        let visibleRemotePlayerIDs = remotePlayers.keys
+            .filter { !blockedPlayerIDs.contains($0) }
+            .sorted()
         engine.setRemotePlayers(worldID == "settings"
             ? []
-            : remotePlayers.keys.sorted().compactMap { remotePlayers[$0] })
+            : visibleRemotePlayerIDs.compactMap { remotePlayers[$0] })
         engine.setInput(
             forward: usernameEditorOpen ? 0 : forward,
             strafe: usernameEditorOpen ? 0 : strafe,
@@ -283,6 +288,7 @@ final class GameViewModel: ObservableObject {
 
     func enterGame() {
         guard engine != nil else { return }
+        hasEnteredGame = true
         gamePaused = false
         lastTick = nil
         connectWorld(worldID)
@@ -321,8 +327,6 @@ final class GameViewModel: ObservableObject {
         guard !blockedPlayerIDs.contains(player.id) else { return }
         blockedPlayerIDs.insert(player.id)
         persistBlockedPlayerIDs()
-        remotePlayers.removeValue(forKey: player.id)
-        remotePlayerNames.removeValue(forKey: player.id)
         showModerationNotice("\(player.username) is blocked. You can unblock them in Players & Safety.")
         let service = moderationService
         Task { [weak self] in
@@ -379,16 +383,17 @@ final class GameViewModel: ObservableObject {
         guard let serverIDs = try? await moderationService.fetchBlockedPlayerIDs() else { return }
         blockedPlayerIDs.formUnion(serverIDs)
         persistBlockedPlayerIDs()
-        remotePlayers = remotePlayers.filter { !blockedPlayerIDs.contains($0.key) }
-        remotePlayerNames = remotePlayerNames.filter { !blockedPlayerIDs.contains($0.key) }
     }
 
     private func handlePresenceEvent(_ event: WorldPresenceEvent) {
-        guard !blockedPlayerIDs.contains(event.playerID) else { return }
         if event.type == "player_leave" {
             remotePlayers.removeValue(forKey: event.playerID)
             remotePlayerNames.removeValue(forKey: event.playerID)
-        } else if event.type == "player_join" || event.type == "player_name" {
+            guard !blockedPlayerIDs.contains(event.playerID) else { return }
+        } else {
+            guard !blockedPlayerIDs.contains(event.playerID) else { return }
+        }
+        if event.type == "player_join" || event.type == "player_name" {
             remotePlayerNames[event.playerID] = event.username ?? defaultPlayerLabel(event.playerID)
         }
         showPresenceEvent(event)
@@ -625,14 +630,16 @@ private struct HomeView: View {
                 .foregroundStyle(colorScheme == .dark ? Color.primary : ink)
                 .lineLimit(2)
                 .minimumScaleFactor(0.82)
-            Text("Start in the lobby, find a gate, and see who else is exploring.")
+            Text(model.hasEnteredGame
+                ? "Return to the place you left off and keep exploring."
+                : "Start in the lobby, find a gate, and see who else is exploring.")
                 .font(.system(size: 17, weight: .medium, design: .rounded))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             Button(action: enterGame) {
                 HStack(spacing: 12) {
-                    Text("ENTER THE LOBBY")
+                    Text(model.hasEnteredGame ? "RESUME GAME" : "ENTER THE LOBBY")
                     Spacer()
                     Image(systemName: "arrow.right")
                         .font(.system(size: 15, weight: .bold))
@@ -645,13 +652,20 @@ private struct HomeView: View {
                 .background(coral, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
             .buttonStyle(HomePrimaryButtonStyle())
-            .accessibilityHint("Opens the interactive game lobby")
+            .accessibilityHint(
+                model.hasEnteredGame
+                    ? "Returns to your paused game"
+                    : "Opens the interactive game lobby"
+            )
         }
     }
 
     private var factsSection: some View {
         HStack(spacing: 18) {
-            HomeFact(label: "STATUS", value: "READY TO ENTER")
+            HomeFact(
+                label: "STATUS",
+                value: model.hasEnteredGame ? "PAUSED" : "READY TO ENTER"
+            )
             Rectangle()
                 .fill(.primary.opacity(0.14))
                 .frame(width: 1, height: 34)
