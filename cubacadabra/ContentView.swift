@@ -4,6 +4,8 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var model = GameViewModel()
+    @State private var gamePresented = false
+    @State private var safetyCenterPresented = false
     private let tick = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -12,12 +14,34 @@ struct ContentView: View {
                 LoadingView()
             } else if let message = model.errorMessage {
                 ErrorView(message: message, retry: model.retry)
+            } else if gamePresented {
+                GameSessionView(
+                    model: model,
+                    safetyCenterPresented: $safetyCenterPresented,
+                    exit: { gamePresented = false }
+                )
             } else {
-                GameSurface(model: model)
+                HomeView(
+                    model: model,
+                    safetyCenterPresented: $safetyCenterPresented,
+                    enterGame: { gamePresented = true }
+                )
             }
         }
         .task { await model.load() }
-        .onReceive(tick) { date in model.tick(at: date) }
+        .onReceive(tick) { date in
+            if gamePresented {
+                model.tick(at: date)
+            }
+        }
+        .onChange(of: gamePresented) { isPresented in
+            if isPresented {
+                model.enterGame()
+            } else {
+                safetyCenterPresented = false
+                model.leaveGame()
+            }
+        }
         .onDisappear { model.disconnect() }
     }
 }
@@ -38,7 +62,6 @@ final class GameViewModel: ObservableObject {
     @Published private(set) var remotePlayerNames: [String: String] = [:]
     @Published private(set) var blockedPlayerIDs: Set<String>
     @Published private(set) var moderationNotice: ModerationNotice?
-    @Published var safetyCenterOpen = false
     @Published var sprinting = false
 
     private let loader = GamePackageLoader()
@@ -106,7 +129,6 @@ final class GameViewModel: ObservableObject {
             frame = initialFrame
             lastTick = nil
             isLoading = false
-            connectWorld(worldID)
             Task { [weak self] in
                 await loader.refreshManifest()
                 await self?.refreshBlockedPlayers()
@@ -245,6 +267,23 @@ final class GameViewModel: ObservableObject {
     func disconnect() {
         worldSocket.disconnect()
         connectedWorldID = nil
+    }
+
+    func enterGame() {
+        guard engine != nil else { return }
+        lastTick = nil
+        connectWorld(worldID)
+    }
+
+    func leaveGame() {
+        disconnect()
+        forward = 0
+        strafe = 0
+        jumpQueued = false
+        lookX = 0
+        lookY = 0
+        zoomDelta = 0
+        usernameEditorOpen = false
     }
 
     var activeRemotePlayers: [RemotePlayerSummary] {
@@ -461,8 +500,215 @@ enum ReportReason: String, CaseIterable, Identifiable {
     }
 }
 
+private struct HomeView: View {
+    @ObservedObject var model: GameViewModel
+    @Binding var safetyCenterPresented: Bool
+    let enterGame: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var appeared = false
+
+    private let coral = Color(red: 0.91, green: 0.39, blue: 0.29)
+    private let ink = Color(red: 0.15, green: 0.29, blue: 0.29)
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Color(.systemBackground)
+                .ignoresSafeArea()
+            Circle()
+                .fill(coral.opacity(colorScheme == .dark ? 0.13 : 0.09))
+                .frame(width: 300, height: 300)
+                .blur(radius: 2)
+                .offset(x: 190, y: -145)
+                .allowsHitTesting(false)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .center) {
+                        Text("CUBACADABRA")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .tracking(2.1)
+                            .foregroundStyle(.primary)
+                        Spacer(minLength: 16)
+                        Button {
+                            safetyCenterPresented = true
+                        } label: {
+                            Image(systemName: "person.2.badge.gearshape")
+                                .font(.system(size: 16, weight: .semibold))
+                                .frame(width: 44, height: 44)
+                                .background(.secondary.opacity(0.12), in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Players and safety")
+                    }
+
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text(model.package?.scene.eyebrow.uppercased() ?? "A SMALL WORLD")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .tracking(1.8)
+                            .foregroundStyle(.secondary)
+                        Text("First Game")
+                            .font(.system(size: 44, weight: .bold, design: .rounded))
+                            .foregroundStyle(colorScheme == .dark ? Color.primary : ink)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.82)
+                        Text("Start in the lobby, find a gate, and see who else is exploring.")
+                            .font(.system(size: 17, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Button(action: enterGame) {
+                            HStack(spacing: 12) {
+                                Text("ENTER THE LOBBY")
+                                Spacer()
+                                Image(systemName: "arrow.right")
+                                    .font(.system(size: 15, weight: .bold))
+                            }
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .tracking(1.1)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 18)
+                            .frame(minHeight: 56)
+                            .background(coral, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        }
+                        .buttonStyle(HomePrimaryButtonStyle())
+                        .accessibilityHint("Opens the interactive game lobby")
+                    }
+                    .padding(.top, 58)
+
+                    HStack(spacing: 18) {
+                        HomeFact(label: "STATUS", value: "READY TO ENTER")
+                        Rectangle()
+                            .fill(.primary.opacity(0.14))
+                            .frame(width: 1, height: 34)
+                        HomeFact(
+                            label: "LOBBY SIZE",
+                            value: "UP TO \(model.package?.scene.maxPlayers ?? 18)"
+                        )
+                    }
+                    .padding(.top, 42)
+
+                    Divider()
+                        .padding(.vertical, 28)
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("YOUR IDENTITY")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .tracking(1.5)
+                            .foregroundStyle(.secondary)
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(model.username.isEmpty ? "Player" : model.username)
+                                .font(.system(size: 20, weight: .bold, design: .rounded))
+                            Spacer()
+                            Text("Change this in the settings room")
+                                .font(.system(size: 12, weight: .medium, design: .rounded))
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.trailing)
+                        }
+                    }
+
+                    Button {
+                        safetyCenterPresented = true
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "checkmark.shield")
+                                .font(.system(size: 17, weight: .semibold))
+                            Text("PLAYERS & SAFETY")
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .tracking(1.1)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .foregroundStyle(.primary)
+                        .frame(minHeight: 52)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 18)
+                }
+                .frame(maxWidth: 520, alignment: .leading)
+                .padding(.horizontal, 24)
+                .padding(.top, 18)
+                .padding(.bottom, 28)
+            }
+        }
+        .opacity(appeared || reduceMotion ? 1 : 0)
+        .offset(y: appeared || reduceMotion ? 0 : 10)
+        .onAppear {
+            guard !appeared else { return }
+            if reduceMotion {
+                appeared = true
+            } else {
+                withAnimation(.easeOut(duration: 0.35)) {
+                    appeared = true
+                }
+            }
+        }
+        .sheet(isPresented: $safetyCenterPresented) {
+            SafetyCenterView(model: model)
+        }
+    }
+}
+
+private struct HomeFact: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(label)
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .tracking(1.3)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundStyle(.primary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct HomePrimaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.82 : 1)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
+    }
+}
+
+private struct GameSessionView: View {
+    let model: GameViewModel
+    @Binding var safetyCenterPresented: Bool
+    let exit: () -> Void
+
+    var body: some View {
+        GameSurface(
+            model: model,
+            onSafety: { safetyCenterPresented = true },
+            exit: exit
+        )
+        .sheet(isPresented: $safetyCenterPresented) {
+            SafetyCenterView(model: model)
+        }
+    }
+}
+
 struct GameSurface: View {
     @ObservedObject var model: GameViewModel
+    let onSafety: () -> Void
+    let exit: () -> Void
+
+    init(
+        model: GameViewModel,
+        onSafety: @escaping () -> Void = {},
+        exit: @escaping () -> Void = {}
+    ) {
+        self.model = model
+        self.onSafety = onSafety
+        self.exit = exit
+    }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -488,7 +734,7 @@ struct GameSurface: View {
             }
             VStack(alignment: .leading, spacing: 0) {
                 if model.worldID != "settings" {
-                    GameHeader(model: model)
+                    GameHeader(model: model, onSafety: onSafety, exit: exit)
                         .padding(.horizontal, 20)
                         .padding(.top, 18)
                     if let notice = model.presenceNotice {
@@ -520,9 +766,6 @@ struct GameSurface: View {
             }
         }
         .background(Color.black)
-        .sheet(isPresented: $model.safetyCenterOpen) {
-            SafetyCenterView(model: model)
-        }
     }
 }
 
@@ -636,6 +879,8 @@ private struct GameAtmosphere: View {
 
 struct GameHeader: View {
     @ObservedObject var model: GameViewModel
+    let onSafety: () -> Void
+    let exit: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -655,16 +900,25 @@ struct GameHeader: View {
                 }
                 Spacer(minLength: 12)
                 VStack(alignment: .trailing, spacing: 4) {
-                    Button {
-                        model.safetyCenterOpen = true
-                    } label: {
-                        Image(systemName: "person.2.badge.gearshape")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 44, height: 44)
-                            .background(.white.opacity(0.14), in: Circle())
+                    HStack(spacing: 8) {
+                        Button(action: onSafety) {
+                            Image(systemName: "person.2.badge.gearshape")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 44, height: 44)
+                                .background(.white.opacity(0.14), in: Circle())
+                        }
+                        .accessibilityLabel("Players and safety")
+
+                        Button(action: exit) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 44, height: 44)
+                                .background(.white.opacity(0.14), in: Circle())
+                        }
+                        .accessibilityLabel("Exit game")
                     }
-                    .accessibilityLabel("Players and safety")
                     Text(model.worldID == "lobby" ? "LOBBY" : "SESSION")
                         .font(.system(size: 11, weight: .bold, design: .rounded))
                         .tracking(1.4)
