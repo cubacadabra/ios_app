@@ -77,7 +77,7 @@ final class EngineBridge {
             pointer.update(from: baseAddress.assumingMemoryBound(to: UInt8.self), count: bytes.count)
         }
         guard engine_load_script_buffer(handle) != 0 else {
-            throw EngineBridgeError.scriptLoadFailed
+            throw EngineBridgeError.scriptLoadFailed(scriptLoadError())
         }
     }
 
@@ -143,6 +143,15 @@ final class EngineBridge {
 
     var uiNodeCount: Int {
         Int(engine_ui_node_count(handle))
+    }
+
+    private func scriptLoadError() -> String {
+        let length = Int(engine_script_error_len(handle))
+        guard length > 0, let pointer = engine_script_error_ptr(handle) else {
+            return "The Rust engine did not provide a Luau error."
+        }
+        let data = Data(bytes: pointer, count: length)
+        return String(data: data, encoding: .utf8) ?? "The Rust engine returned an invalid Luau error."
     }
 
     func setRemotePlayers(_ players: [EngineRemotePlayer]) {
@@ -270,7 +279,7 @@ final class EngineBridge {
 enum EngineBridgeError: LocalizedError {
     case creationFailed
     case scriptBufferFailed
-    case scriptLoadFailed
+    case scriptLoadFailed(String)
     case packageBufferFailed
     case packageLoadFailed
 
@@ -278,7 +287,7 @@ enum EngineBridgeError: LocalizedError {
         switch self {
         case .creationFailed: return "The Rust game engine could not be created."
         case .scriptBufferFailed: return "The Rust game engine could not receive the game script."
-        case .scriptLoadFailed: return "The Luau game script could not be loaded."
+        case .scriptLoadFailed(let detail): return "The Luau game script could not be loaded: \(detail)"
         case .packageBufferFailed: return "The Rust game engine could not receive the game manifest."
         case .packageLoadFailed: return "The Rust game engine could not load the game manifest."
         }

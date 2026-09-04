@@ -205,8 +205,11 @@ enum AppLinks {
 
 struct GamePackageLoader {
     var baseURL = ClientConfiguration.gameBaseURL
-    private static let cachedManifestKey = "cubacadabra.cached-manifest"
-    private static let cachedScriptKey = "cubacadabra.cached-script"
+    // The generated Luau package format changed with the Build Together UI.
+    // Versioning these keys prevents an older cached script from overriding a
+    // corrected bundle on the first launch after an app update.
+    private static let cachedManifestKey = "cubacadabra.cached-manifest.v2"
+    private static let cachedScriptKey = "cubacadabra.cached-script.v2"
     private static let maximumManifestBytes = 512_000
     private static let maximumScriptBytes = 512_000
 
