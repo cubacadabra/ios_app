@@ -106,6 +106,41 @@ final class EngineBridge {
         engine_set_input(handle, forward, strafe, sprint ? 1 : 0, jump ? 1 : 0, lookX, lookY, zoomDelta)
     }
 
+    func setUIViewport(
+        width: Float,
+        height: Float,
+        scale: Float,
+        safeTop: Float,
+        safeRight: Float,
+        safeBottom: Float,
+        safeLeft: Float
+    ) {
+        engine_set_ui_viewport(
+            handle,
+            width,
+            height,
+            scale,
+            safeTop,
+            safeRight,
+            safeBottom,
+            safeLeft
+        )
+    }
+
+    @discardableResult
+    func uiPointer(pointerID: UInt64, phase: UInt8, x: Float, y: Float) -> Bool {
+        engine_ui_pointer(handle, pointerID, phase, x, y) != 0
+    }
+
+    func pollUIEvent() -> Data? {
+        guard engine_ui_poll_event(handle) != 0 else { return nil }
+        let length = Int(engine_ui_event_len(handle))
+        guard length > 0, let pointer = engine_ui_event_ptr(handle) else {
+            return Data()
+        }
+        return Data(bytes: pointer, count: length)
+    }
+
     func setRemotePlayers(_ players: [EngineRemotePlayer]) {
         engine_set_remote_player_count(handle, UInt(players.count))
         for (index, player) in players.enumerated() {

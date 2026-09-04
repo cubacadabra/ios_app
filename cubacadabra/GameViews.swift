@@ -26,30 +26,27 @@ struct GameSurface: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             if let engine = model.renderEngine {
-                RustGameSurface(engine: engine, isActive: true)
-                    .ignoresSafeArea()
-                    .gesture(
-                        DragGesture(minimumDistance: 4)
-                            .onChanged { value in model.lookChanged(to: value.translation) }
-                            .onEnded { _ in model.lookEnded() }
-                    )
-                    .simultaneousGesture(
-                        MagnificationGesture()
-                            .onChanged { value in model.zoomChanged(to: value) }
-                            .onEnded { _ in model.zoomEnded() }
-                    )
-                    .simultaneousGesture(
-                        TapGesture().onEnded { model.requestUsernameEdit() }
-                    )
+                RustGameSurface(
+                    engine: engine,
+                    isActive: true,
+                    onLookChanged: { model.lookChanged(to: $0) },
+                    onLookEnded: { model.lookEnded() },
+                    onZoomDelta: { model.zoomChangedBy(delta: $0) },
+                    onZoomEnded: { model.zoomEnded() },
+                    onWorldTap: { model.requestUsernameEdit() }
+                )
+                .ignoresSafeArea()
             }
             if model.worldID != "settings" {
                 GameAtmosphere(isSession: model.worldID != "lobby")
             }
             VStack(alignment: .leading, spacing: 0) {
                 if model.worldID != "settings" {
-                    GameHeader(model: model, onSafety: onSafety)
-                        .padding(.horizontal, 20)
-                        .padding(.top, 18)
+                    if model.worldID == "lobby" {
+                        GameHeader(model: model, onSafety: onSafety)
+                            .padding(.horizontal, 20)
+                            .padding(.top, 18)
+                    }
                     if let notice = model.presenceNotice {
                         PresenceNoticeView(notice: notice)
                             .padding(.horizontal, 20)
@@ -66,14 +63,11 @@ struct GameSurface: View {
                     }
                 }
                 Spacer()
-                if model.worldID == "real-game" {
-                    BuildToolbar(model: model)
+                if model.worldID == "lobby" {
+                    GameControls(model: model)
                         .padding(.horizontal, 20)
-                        .padding(.bottom, 10)
+                        .padding(.bottom, 18)
                 }
-                GameControls(model: model)
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 18)
             }
             .ignoresSafeArea(edges: .bottom)
             .animation(.easeOut(duration: 0.22), value: model.presenceNotice)
@@ -84,77 +78,6 @@ struct GameSurface: View {
             }
         }
         .background(Color.black)
-    }
-}
-
-private struct BuildToolbar: View {
-    @ObservedObject var model: GameViewModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(model.buildPhase == "tour" ? "TOUR MODE" : "BUILD TOGETHER")
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .tracking(1.4)
-                .foregroundStyle(.secondary)
-            Text(model.buildPhase == "tour" ? "Walk through what you made together." : model.buildPrompt)
-                .font(.system(size: 17, weight: .bold, design: .rounded))
-                .lineLimit(2)
-            if model.buildPhase == "build" {
-                HStack(spacing: 7) {
-                    ForEach(["place", "rotate", "remove", "recolor"], id: \.self) { tool in
-                        Button(tool.uppercased()) { model.buildTool = tool }
-                            .buttonStyle(BuildToolButtonStyle(active: model.buildTool == tool))
-                    }
-                }
-                HStack(spacing: 8) {
-                    Button("SHAPE · \(model.buildShape.uppercased())") { model.cycleBuildShape() }
-                        .buttonStyle(BuildToolButtonStyle())
-                    Button("COLOR · \(model.buildColor.uppercased())") { model.cycleBuildColor() }
-                        .buttonStyle(BuildToolButtonStyle())
-                    Spacer()
-                    Button("USE TOOL") { model.performBuildAction() }
-                        .buttonStyle(BuildToolButtonStyle(active: true))
-                }
-                Text("Tap USE TOOL while facing the build area.")
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
-            }
-            HStack {
-                Text("\(model.buildBlockCount) blocks")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                if model.buildPhase == "build" {
-                    Button("SAVE & TOUR") { model.saveBuild() }
-                        .buttonStyle(BuildToolButtonStyle(active: true))
-                } else {
-                    Button("RETURN TO LOBBY") { model.returnToLobby() }
-                        .buttonStyle(BuildToolButtonStyle())
-                }
-            }
-        }
-        .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(.primary.opacity(0.12), lineWidth: 1))
-        .frame(maxWidth: 520)
-        .frame(maxWidth: .infinity)
-    }
-}
-
-private struct BuildToolButtonStyle: ButtonStyle {
-    let active: Bool
-
-    init(active: Bool = false) { self.active = active }
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 9, weight: .bold, design: .rounded))
-            .tracking(0.8)
-            .foregroundStyle(active ? Color.white : Color.primary)
-            .frame(minHeight: 38)
-            .padding(.horizontal, 10)
-            .background(active ? Color.accentColor : Color.primary.opacity(0.08), in: Capsule())
-            .opacity(configuration.isPressed ? 0.72 : 1)
     }
 }
 
@@ -364,4 +287,3 @@ struct GameHeader: View {
         }
     }
 }
-

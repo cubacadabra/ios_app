@@ -2,6 +2,25 @@ import Foundation
 import Combine
 import SwiftUI
 import simd
+
+private struct EngineUIEvent: Decodable {
+    let nodeID: String
+    let action: String
+    let phase: String
+    let value: Float?
+    let x: Float?
+    let y: Float?
+
+    enum CodingKeys: String, CodingKey {
+        case nodeID = "nodeId"
+        case action
+        case phase
+        case value
+        case x
+        case y
+    }
+}
+
 @MainActor
 final class GameViewModel: ObservableObject {
     @Published private(set) var package: GamePackage?
@@ -42,7 +61,6 @@ final class GameViewModel: ObservableObject {
     private var lookY: Float = 0
     private var zoomDelta: Float = 0
     private var lastLookTranslation = CGSize.zero
-    private var lastMagnification: CGFloat = 1
     private var noticeTask: Task<Void, Never>?
     private var moderationNoticeTask: Task<Void, Never>?
     private var remotePlayers: [String: EngineRemotePlayer] = [:]
@@ -148,6 +166,7 @@ final class GameViewModel: ObservableObject {
         lookY = 0
         zoomDelta = 0
         engine.step(delta)
+        handleUIEvents()
         let nextFrame = engine.frame()
         updateSettingsRoomState(nextFrame.settingsRoomState)
         if let activeWorldID = runtimeWorldIDs[safe: nextFrame.activeWorldIndex],
@@ -193,14 +212,12 @@ final class GameViewModel: ObservableObject {
 
     func lookEnded() { lastLookTranslation = .zero }
 
-    func zoomChanged(to magnification: CGFloat) {
+    func zoomChangedBy(delta: CGFloat) {
         guard !usernameEditorOpen else { return }
-        let change = magnification - lastMagnification
-        zoomDelta -= Float(change * 8)
-        lastMagnification = magnification
+        zoomDelta -= Float(delta * 8)
     }
 
-    func zoomEnded() { lastMagnification = 1 }
+    func zoomEnded() {}
 
     func toggleSprinting() {
         guard !usernameEditorOpen else { return }
@@ -212,6 +229,39 @@ final class GameViewModel: ObservableObject {
     }
 
     var renderEngine: EngineBridge? { engine }
+
+    private func handleUIEvents() {
+        guard let engine else { return }
+        while let data = engine.pollUIEvent(),
+              let event = try? JSONDecoder().decode(EngineUIEvent.self, from: data) {
+            switch event.action {
+            case "player.move":
+                setMove(strafe: event.x ?? 0, forward: -(event.y ?? 0))
+            case "player.jump" where event.phase == "activate":
+                jump()
+            case "player.run" where event.phase == "activate":
+                toggleSprinting()
+            case "build.place", "build.rotate", "build.remove", "build.recolor":
+                buildTool = String(event.action.dropFirst("build.".count))
+            case "build.use" where event.phase == "activate":
+                performBuildAction()
+            case "build.save" where event.phase == "activate":
+                saveBuild()
+            case "build.return" where event.phase == "activate":
+                returnToLobby()
+            case "build.shape" where event.phase == "activate":
+                cycleBuildShape()
+            case "build.color" where event.phase == "activate":
+                cycleBuildColor()
+            case let action where action.hasPrefix("build.shape.") && event.phase == "activate":
+                buildShape = String(action.dropFirst("build.shape.".count))
+            case let action where action.hasPrefix("build.color.") && event.phase == "activate":
+                buildColor = String(action.dropFirst("build.color.".count))
+            default:
+                break
+            }
+        }
+    }
 
     func requestUsernameEdit() {
         guard settingsRoomState == 2, !usernameEditorOpen else { return }
@@ -595,4 +645,3 @@ enum ReportReason: String, CaseIterable, Identifiable {
         }
     }
 }
-
