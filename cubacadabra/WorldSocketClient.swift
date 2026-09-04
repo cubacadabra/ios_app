@@ -16,6 +16,13 @@ enum WorldConnectionState: Equatable {
     }
 }
 
+enum ExperienceSendResult: Equatable {
+    case sent
+    case queued
+    case unavailable
+    case invalid
+}
+
 struct WorldPresenceEvent {
     let type: String
     let playerID: String
@@ -87,6 +94,7 @@ final class WorldSocketClient {
     private var lastSentMove: SentMove?
     private var pendingUsername: String
     private var hidden = false
+    private var pendingExperienceMessages: [String] = []
 
     init(
         onStateChange: @escaping (WorldConnectionState) -> Void,
@@ -112,6 +120,7 @@ final class WorldSocketClient {
 
         generation += 1
         closeCurrentSocket()
+        pendingExperienceMessages.removeAll()
         worldID = normalizedWorldID
         reconnectAttempt = 0
         lastMoveSentAt = Date.distantPast.timeIntervalSinceReferenceDate
@@ -125,6 +134,7 @@ final class WorldSocketClient {
         stopped = true
         generation += 1
         worldID = nil
+        pendingExperienceMessages.removeAll()
         reconnectTask?.cancel()
         reconnectTask = nil
         closeCurrentSocket()
@@ -173,6 +183,7 @@ final class WorldSocketClient {
                 guard isCurrent(task, generation: expectedGeneration) else { return }
                 reconnectAttempt = 0
                 onStateChange(.connected)
+                flushPendingExperienceMessages(on: task)
                 handle(message)
             }
         } catch {
@@ -321,14 +332,49 @@ final class WorldSocketClient {
         lastSentMove = move
     }
 
-    func sendExperience(_ type: String, payload: [String: Any] = [:]) {
-        guard !stopped, let socketTask, socketTask.state == .running else { return }
+    @discardableResult
+    func sendExperience(_ type: String, payload: [String: Any] = [:]) -> ExperienceSendResult {
         var message: [String: Any] = ["type": type]
         payload.forEach { message[$0.key] = $0.value }
         guard JSONSerialization.isValidJSONObject(message),
               let data = try? JSONSerialization.data(withJSONObject: message),
-              let text = String(data: data, encoding: .utf8) else { return }
-        socketTask.send(.string(text)) { _ in }
+              let text = String(data: data, encoding: .utf8) else { return .invalid }
+        guard !stopped, worldID != nil else { return .unavailable }
+        guard let socketTask, socketTask.state == .running else {
+            enqueueExperienceMessage(text)
+            return .queued
+        }
+        socketTask.send(.string(text)) { [weak self, weak socketTask] error in
+            guard error != nil, let self, let socketTask else { return }
+            Task { @MainActor in
+                guard self.isCurrent(socketTask, generation: self.generation) else { return }
+                self.enqueueExperienceMessage(text)
+            }
+        }
+        return .sent
+    }
+
+    private func enqueueExperienceMessage(_ text: String) {
+        let maximumPendingMessages = 64
+        if pendingExperienceMessages.count >= maximumPendingMessages {
+            pendingExperienceMessages.removeFirst()
+        }
+        pendingExperienceMessages.append(text)
+    }
+
+    private func flushPendingExperienceMessages(on task: URLSessionWebSocketTask) {
+        guard task.state == .running, !pendingExperienceMessages.isEmpty else { return }
+        let messages = pendingExperienceMessages
+        pendingExperienceMessages.removeAll(keepingCapacity: true)
+        for message in messages {
+            task.send(.string(message)) { [weak self, weak task] error in
+                guard error != nil, let self, let task else { return }
+                Task { @MainActor in
+                    guard self.isCurrent(task, generation: self.generation) else { return }
+                    self.enqueueExperienceMessage(message)
+                }
+            }
+        }
     }
 
     private func scheduleReconnect(generation expectedGeneration: Int) {

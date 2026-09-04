@@ -50,6 +50,7 @@ final class GameViewModel: ObservableObject {
     @Published var buildTool = "place"
     @Published var buildShape = "cube"
     @Published var buildColor = "coral"
+    @Published private(set) var buildActionNotice: String?
     @Published private(set) var hasEnteredGame = false
     @Published var sprinting = false
 
@@ -67,6 +68,7 @@ final class GameViewModel: ObservableObject {
     private var lastLookTranslation = CGSize.zero
     private var noticeTask: Task<Void, Never>?
     private var moderationNoticeTask: Task<Void, Never>?
+    private var buildActionNoticeTask: Task<Void, Never>?
     private var remotePlayers: [String: EngineRemotePlayer] = [:]
     private var connectedWorldID: String?
     private var pendingSessionWorldID: String?
@@ -238,8 +240,14 @@ final class GameViewModel: ObservableObject {
 
     private func handleUIEvents() {
         guard let engine else { return }
-        while let data = engine.pollUIEvent(),
-              let event = try? JSONDecoder().decode(EngineUIEvent.self, from: data) {
+        while let data = engine.pollUIEvent() {
+            let event: EngineUIEvent
+            do {
+                event = try JSONDecoder().decode(EngineUIEvent.self, from: data)
+            } catch {
+                gameLog.error("Discarding malformed Rust UI event: \(error.localizedDescription, privacy: .public)")
+                continue
+            }
             switch event.action {
             case "player.move":
                 setMove(strafe: event.x ?? 0, forward: -(event.y ?? 0))
@@ -252,8 +260,11 @@ final class GameViewModel: ObservableObject {
             case "build.tool" where event.phase == "activate":
                 let tools = ["place", "rotate", "remove", "recolor"]
                 buildTool = tools[(tools.firstIndex(of: buildTool).map { ($0 + 1) % tools.count } ?? 0)]
-            case "build.place", "build.rotate", "build.remove", "build.recolor":
-                buildTool = String(event.action.dropFirst("build.".count))
+            case let action where
+                ["build.place", "build.rotate", "build.remove", "build.recolor"].contains(action) &&
+                event.phase == "activate":
+                buildTool = String(action.dropFirst("build.".count))
+                performBuildAction()
             case "build.use" where event.phase == "activate":
                 performBuildAction()
             case "build.save" where event.phase == "activate":
@@ -531,7 +542,16 @@ final class GameViewModel: ObservableObject {
     }
 
     func performBuildAction() {
-        guard worldID == "real-game", buildPhase == "build", let frame else { return }
+        guard worldID == "real-game" else {
+            gameLog.error("Build action ignored outside real-game; world=\(self.worldID, privacy: .public)")
+            showBuildActionNotice("Building is unavailable here")
+            return
+        }
+        guard let frame else {
+            gameLog.error("Build action ignored because no engine frame is available")
+            showBuildActionNotice("World is still loading")
+            return
+        }
         let shapes: [String: SIMD3<Float>] = ["cube": SIMD3(repeating: 1), "beam": SIMD3(3, 1, 1), "slab": SIMD3(2, 0.5, 2)]
         let size = shapes[buildShape] ?? SIMD3(repeating: 1)
         let target = SIMD3(
@@ -540,15 +560,46 @@ final class GameViewModel: ObservableObject {
             round((frame.player.position.z - cos(frame.camera.x) * 4) * 2) / 2
         )
         if buildTool == "place" {
-            worldSocket.sendExperience("build_action", payload: ["action": "place", "block": ["x": target.x, "y": target.y, "z": target.z, "shape": buildShape, "color": buildColor]])
+            let result = worldSocket.sendExperience("build_action", payload: ["action": "place", "block": ["x": target.x, "y": target.y, "z": target.z, "shape": buildShape, "color": buildColor]])
+            handleBuildSendResult(result, action: "place")
             return
         }
         guard let nearest = buildBlocks.min(by: { lhs, rhs in
             distance(SIMD3(lhs.x, lhs.y, lhs.z), target) < distance(SIMD3(rhs.x, rhs.y, rhs.z), target)
-        }), distance(SIMD3(nearest.x, nearest.y, nearest.z), target) < 2.1 else { return }
+        }), distance(SIMD3(nearest.x, nearest.y, nearest.z), target) < 2.1 else {
+            showBuildActionNotice("Look toward a nearby block")
+            return
+        }
         var payload: [String: Any] = ["action": buildTool, "id": nearest.id]
         if buildTool == "recolor" { payload["color"] = buildColor }
-        worldSocket.sendExperience("build_action", payload: payload)
+        let result = worldSocket.sendExperience("build_action", payload: payload)
+        handleBuildSendResult(result, action: buildTool)
+    }
+
+    private func handleBuildSendResult(_ result: ExperienceSendResult, action: String) {
+        switch result {
+        case .sent:
+            gameLog.debug("Build action sent: \(action, privacy: .public)")
+        case .queued:
+            gameLog.info("Build action queued while reconnecting: \(action, privacy: .public)")
+            showBuildActionNotice("Reconnecting — action queued")
+        case .unavailable:
+            gameLog.error("Build action unavailable: \(action, privacy: .public)")
+            showBuildActionNotice("Can’t reach the shared build")
+        case .invalid:
+            gameLog.error("Build action could not be encoded: \(action, privacy: .public)")
+            showBuildActionNotice("Couldn’t send that action")
+        }
+    }
+
+    private func showBuildActionNotice(_ message: String) {
+        buildActionNotice = message
+        buildActionNoticeTask?.cancel()
+        buildActionNoticeTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2.5))
+            guard !Task.isCancelled, self?.buildActionNotice == message else { return }
+            self?.buildActionNotice = nil
+        }
     }
 
     func saveBuild() { worldSocket.sendExperience("build_save") }

@@ -48,6 +48,24 @@ struct GameSurface: View {
             }
             .ignoresSafeArea(edges: .bottom)
             .animation(.easeOut(duration: 0.22), value: model.presenceNotice)
+            if let notice = model.buildActionNotice, model.worldID == "real-game" {
+                VStack {
+                    Spacer()
+                    Text(notice)
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color.white)
+                        .padding(.horizontal, 16)
+                        .frame(minHeight: 44)
+                        .background(Color(red: 9 / 255, green: 26 / 255, blue: 34 / 255).opacity(0.94), in: Capsule())
+                        .overlay(Capsule().stroke(Color.white.opacity(0.30), lineWidth: 1.5))
+                        .shadow(color: .black.opacity(0.32), radius: 8, y: 4)
+                        .padding(.bottom, 112)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .accessibilityLabel(notice)
+                }
+                .frame(maxWidth: .infinity)
+                .allowsHitTesting(false)
+            }
             if model.usernameEditorOpen {
                 UsernameEditorView(model: model)
                     .transition(.opacity)
@@ -55,6 +73,7 @@ struct GameSurface: View {
             }
         }
         .background(Color.black)
+        .animation(.easeOut(duration: 0.18), value: model.buildActionNotice)
     }
 }
 
