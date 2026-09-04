@@ -169,7 +169,7 @@ enum ClientConfiguration {
     private static let defaultBackendURL = "ws://localhost:8787"
     private static let defaultGameBaseURL = "http://localhost:5173/games/first-game/"
     #else
-    private static let defaultBackendURL = "wss://cubacadabra.andrew-f97.workers.dev"
+    private static let defaultBackendURL = "wss://api.cubacadabra.com"
     private static let defaultGameBaseURL = "https://cubacadabra.com/games/first-game/"
     #endif
 
