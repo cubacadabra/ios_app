@@ -26,6 +26,7 @@ struct cubacadabraApp: App {
 @MainActor
 final class AppOrientationController: ObservableObject {
     @Published private(set) var isGameActive = false
+    private(set) var shouldLockLandscape = false
     private weak var windowScene: UIWindowScene?
 
     func connect(to windowScene: UIWindowScene) {
@@ -34,6 +35,7 @@ final class AppOrientationController: ObservableObject {
             windowScene.sizeRestrictions?.minimumSize = CGSize(width: 600, height: 400)
         }
         if isGameActive {
+            shouldLockLandscape = interfaceOrientationIsLandscape
             updateOrientationPreferences()
             requestLandscape()
         }
@@ -41,10 +43,20 @@ final class AppOrientationController: ObservableObject {
 
     func setGameActive(_ isActive: Bool) {
         isGameActive = isActive
+        shouldLockLandscape = isActive && interfaceOrientationIsLandscape
         updateOrientationPreferences()
         if isActive {
             requestLandscape()
         }
+    }
+
+    @available(iOS 26.0, *)
+    func sceneGeometryDidChange() {
+        let shouldLock = isGameActive
+            && windowScene?.effectiveGeometry.interfaceOrientation.isLandscape == true
+        guard shouldLockLandscape != shouldLock else { return }
+        shouldLockLandscape = shouldLock
+        updateOrientationPreferences()
     }
 
     private func requestLandscape() {
@@ -63,6 +75,16 @@ final class AppOrientationController: ObservableObject {
             return
         }
         rootViewController.setNeedsUpdateOfSupportedInterfaceOrientations()
+        if #available(iOS 26.0, *) {
+            rootViewController.setNeedsUpdateOfPrefersInterfaceOrientationLocked()
+        }
+    }
+
+    private var interfaceOrientationIsLandscape: Bool {
+        if #available(iOS 26.0, *) {
+            return windowScene?.effectiveGeometry.interfaceOrientation.isLandscape == true
+        }
+        return windowScene?.interfaceOrientation.isLandscape == true
     }
 }
 
@@ -83,6 +105,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
 final class AppSceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
+    private var orientationController: AppOrientationController?
 
     func scene(
         _ scene: UIScene,
@@ -91,6 +114,7 @@ final class AppSceneDelegate: UIResponder, UIWindowSceneDelegate {
     ) {
         guard let windowScene = scene as? UIWindowScene else { return }
         let orientationController = AppOrientationController()
+        self.orientationController = orientationController
         orientationController.connect(to: windowScene)
 
         let rootViewController = GameHostingController(
@@ -101,6 +125,14 @@ final class AppSceneDelegate: UIResponder, UIWindowSceneDelegate {
         window.rootViewController = rootViewController
         self.window = window
         window.makeKeyAndVisible()
+    }
+
+    @available(iOS 26.0, *)
+    func windowScene(
+        _ windowScene: UIWindowScene,
+        didUpdateEffectiveGeometry previousGeometry: UIWindowScene.Geometry
+    ) {
+        orientationController?.sceneGeometryDidChange()
     }
 }
 
@@ -125,6 +157,14 @@ final class GameHostingController: UIHostingController<ContentView> {
     }
 
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
-        orientationController.isGameActive ? .landscape : .all
+        if #available(iOS 26.0, *) {
+            return .all
+        }
+        return orientationController.isGameActive ? .landscape : .all
+    }
+
+    @available(iOS 26.0, *)
+    override var prefersInterfaceOrientationLocked: Bool {
+        orientationController.shouldLockLandscape
     }
 }
