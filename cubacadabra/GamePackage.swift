@@ -236,6 +236,9 @@ struct GamePackageLoader {
               let script = String(data: scriptData, encoding: .utf8) else {
             throw GamePackageError.missingBundledPackage
         }
+#if DEBUG
+        NSLog("Cubacadabra using game.luau at %@\n%@", scriptURL.path, script)
+#endif
         return try makePackage(manifestData: manifestData, script: script)
     }
 
