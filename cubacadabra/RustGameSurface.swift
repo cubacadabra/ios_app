@@ -45,6 +45,7 @@ struct RustGameSurface: UIViewRepresentable {
         private var renderer: OpaquePointer?
         private var engine: EngineBridge?
         private var lastViewportDescription = ""
+        private var lastDrawableSize = CGSize.zero
 
         func update(_ surface: RustGameSurface, view: InteractiveGameView) {
             engine = surface.engine
@@ -65,6 +66,10 @@ struct RustGameSurface: UIViewRepresentable {
                     safeLeft: Float(safeArea.left)
                 )
             }
+            view.onDrawableSizeChange = { [weak self, weak view] size in
+                guard let view else { return }
+                self?.resizeRenderer(to: size, view: view)
+            }
             view.onPointer = { [weak self] pointerID, phase, point in
                 guard let engine = self?.engine else { return false }
                 return engine.uiPointer(
@@ -80,6 +85,7 @@ struct RustGameSurface: UIViewRepresentable {
             view.onZoomEnded = surface.onZoomEnded
             view.onWorldTap = surface.onWorldTap
             view.onViewportChange?(view.bounds.size, view.contentScaleFactor, view.safeAreaInsets)
+            resizeRenderer(to: view.drawableSize, view: view)
             guard surface.isActive else { return }
             attachIfNeeded(to: view)
             syncEngine()
@@ -93,11 +99,8 @@ struct RustGameSurface: UIViewRepresentable {
         }
 
         func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
-            guard size.width > 0, size.height > 0 else { return }
-            attachIfNeeded(to: view, drawableSize: size)
-            if let renderer {
-                engine_renderer_resize(renderer, Float(size.width), Float(size.height))
-            }
+            guard let view = view as? InteractiveGameView else { return }
+            resizeRenderer(to: size, view: view)
         }
 
         func shutdown() {
@@ -118,6 +121,17 @@ struct RustGameSurface: UIViewRepresentable {
                 Float(size.width),
                 Float(size.height)
             )
+            lastDrawableSize = size
+        }
+
+        private func resizeRenderer(to size: CGSize, view: InteractiveGameView) {
+            guard size.width > 0, size.height > 0 else { return }
+            attachIfNeeded(to: view, drawableSize: size)
+            guard lastDrawableSize != size else { return }
+            if let renderer {
+                engine_renderer_resize(renderer, Float(size.width), Float(size.height))
+                lastDrawableSize = size
+            }
         }
 
         private func syncEngine() {
@@ -129,6 +143,7 @@ struct RustGameSurface: UIViewRepresentable {
 
 final class InteractiveGameView: MTKView {
     var onViewportChange: ((CGSize, CGFloat, UIEdgeInsets) -> Void)?
+    var onDrawableSizeChange: ((CGSize) -> Void)?
     var onPointer: ((UInt64, UInt8, CGPoint) -> Bool)?
     var onLookChanged: ((CGSize) -> Void)?
     var onLookEnded: (() -> Void)?
@@ -145,6 +160,19 @@ final class InteractiveGameView: MTKView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        // MTKView normally tracks this automatically, but an iPhone rotation
+        // can lay out the view before delivering drawableSizeWillChange.
+        let scale = max(contentScaleFactor, 1.0)
+        let layoutDrawableSize = CGSize(
+            width: bounds.width * scale,
+            height: bounds.height * scale
+        )
+        if layoutDrawableSize.width > 0, layoutDrawableSize.height > 0 {
+            if drawableSize != layoutDrawableSize {
+                drawableSize = layoutDrawableSize
+            }
+            onDrawableSizeChange?(layoutDrawableSize)
+        }
         onViewportChange?(bounds.size, contentScaleFactor, safeAreaInsets)
     }
 

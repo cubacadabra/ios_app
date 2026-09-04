@@ -123,6 +123,10 @@ final class GameHostingController: UIHostingController<ContentView> {
         }
     }
 
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
+        .all
+    }
+
     @available(iOS 26.0, *)
     override var prefersInterfaceOrientationLocked: Bool {
         orientationController.isGameActive
