@@ -1,6 +1,9 @@
 import MetalKit
+import OSLog
 import SwiftUI
 import UIKit
+
+private let rustSurfaceLog = Logger(subsystem: "com.cubacadabra.app", category: "rust-surface")
 
 struct RustGameSurface: UIViewRepresentable {
     let engine: EngineBridge
@@ -41,11 +44,17 @@ struct RustGameSurface: UIViewRepresentable {
     final class Coordinator: NSObject, MTKViewDelegate {
         private var renderer: OpaquePointer?
         private var engine: EngineBridge?
+        private var lastViewportDescription = ""
 
         func update(_ surface: RustGameSurface, view: InteractiveGameView) {
             engine = surface.engine
             view.isPaused = !surface.isActive
             view.onViewportChange = { [weak self] size, scale, safeArea in
+                let description = "\(Int(size.width))x\(Int(size.height)) @\(scale), safe=\(Int(safeArea.top))/\(Int(safeArea.right))/\(Int(safeArea.bottom))/\(Int(safeArea.left))"
+                if self?.lastViewportDescription != description {
+                    self?.lastViewportDescription = description
+                    rustSurfaceLog.info("Rust UI viewport \(description, privacy: .public)")
+                }
                 self?.engine?.setUIViewport(
                     width: Float(size.width),
                     height: Float(size.height),

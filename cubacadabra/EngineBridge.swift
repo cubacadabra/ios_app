@@ -141,6 +141,10 @@ final class EngineBridge {
         return Data(bytes: pointer, count: length)
     }
 
+    var uiNodeCount: Int {
+        Int(engine_ui_node_count(handle))
+    }
+
     func setRemotePlayers(_ players: [EngineRemotePlayer]) {
         engine_set_remote_player_count(handle, UInt(players.count))
         for (index, player) in players.enumerated() {

@@ -2,6 +2,9 @@ import Foundation
 import Combine
 import SwiftUI
 import simd
+import OSLog
+
+private let gameLog = Logger(subsystem: "com.cubacadabra.app", category: "game")
 
 private struct EngineUIEvent: Decodable {
     let nodeID: String
@@ -107,6 +110,7 @@ final class GameViewModel: ObservableObject {
             let loadedEngine = try EngineBridge()
             try loadedEngine.loadPackage(loaded.manifest)
             try loadedEngine.loadScript(loaded.script)
+            gameLog.info("Rust package and script loaded; UI nodes: \(loadedEngine.uiNodeCount, privacy: .public)")
             runtimeWorldIDs = loadedPackage.runtimeWorldEntries().map(\.id)
             package = loadedPackage
             username = worldSocket.username
@@ -123,6 +127,7 @@ final class GameViewModel: ObservableObject {
                 await self?.refreshBlockedPlayers()
             }
         } catch {
+            gameLog.error("Game load failed: \(error.localizedDescription, privacy: .public)")
             isLoading = false
             errorMessage = error.localizedDescription
         }
@@ -260,6 +265,7 @@ final class GameViewModel: ObservableObject {
             default:
                 break
             }
+            gameLog.debug("Rust UI event node=\(event.nodeID, privacy: .public) action=\(event.action, privacy: .public) phase=\(event.phase, privacy: .public)")
         }
     }
 
