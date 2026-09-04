@@ -37,6 +37,7 @@ final class GameViewModel: ObservableObject {
     @Published private(set) var usernameStatus = "Choose a name other players can find you by."
     @Published private(set) var settingsRoomState: UInt8 = 0
     @Published private(set) var usernameEditorOpen = false
+    @Published private(set) var safetyRequestID = 0
     @Published private(set) var remotePlayerNames: [String: String] = [:]
     @Published private(set) var blockedPlayerIDs: Set<String>
     @Published private(set) var moderationNotice: ModerationNotice?
@@ -246,6 +247,11 @@ final class GameViewModel: ObservableObject {
                 jump()
             case "player.run" where event.phase == "activate":
                 toggleSprinting()
+            case "hud.safety" where event.phase == "activate":
+                safetyRequestID &+= 1
+            case "build.tool" where event.phase == "activate":
+                let tools = ["place", "rotate", "remove", "recolor"]
+                buildTool = tools[(tools.firstIndex(of: buildTool).map { ($0 + 1) % tools.count } ?? 0)]
             case "build.place", "build.rotate", "build.remove", "build.recolor":
                 buildTool = String(event.action.dropFirst("build.".count))
             case "build.use" where event.phase == "activate":

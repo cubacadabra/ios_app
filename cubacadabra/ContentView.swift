@@ -16,15 +16,7 @@ struct ContentView: View {
                 ErrorView(message: message, retry: model.retry)
             } else if gamePresented {
                 GameSessionView(
-                    model: model,
-                    openSafety: {
-                        pausedForSafety = true
-                        model.pauseGame()
-                        gamePresented = false
-                        DispatchQueue.main.async {
-                            safetyCenterPresented = true
-                        }
-                    }
+                    model: model
                 )
             } else {
                 HomeView(
@@ -39,6 +31,15 @@ struct ContentView: View {
         .onReceive(tick) { date in
             if gamePresented {
                 model.tick(at: date)
+            }
+        }
+        .onChange(of: model.safetyRequestID) { _ in
+            guard gamePresented else { return }
+            pausedForSafety = true
+            model.pauseGame()
+            gamePresented = false
+            DispatchQueue.main.async {
+                safetyCenterPresented = true
             }
         }
         .onChange(of: gamePresented) { isPresented in

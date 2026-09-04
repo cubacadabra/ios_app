@@ -1,40 +1,4 @@
 import SwiftUI
-struct GameControls: View {
-    @ObservedObject var model: GameViewModel
-    @State private var joystick = CGSize.zero
-
-    var body: some View {
-        HStack(alignment: .bottom) {
-            ZStack {
-                Circle().fill(.black.opacity(0.3)).frame(width: 108, height: 108)
-                    .overlay(Circle().stroke(.white.opacity(0.24), lineWidth: 1))
-                Circle().fill(.white.opacity(0.84)).frame(width: 48, height: 48)
-                    .offset(x: joystick.width, y: joystick.height)
-            }
-            .frame(width: 120, height: 120)
-            .contentShape(Circle())
-            .gesture(DragGesture(minimumDistance: 0).onChanged { value in
-                joystick = value.translation
-                let limit: CGFloat = 38
-                model.setMove(
-                    strafe: Float(max(-limit, min(limit, value.translation.width)) / limit),
-                    forward: Float(-max(-limit, min(limit, value.translation.height)) / limit)
-                )
-            }.onEnded { _ in
-                joystick = .zero
-                model.setMove(strafe: 0, forward: 0)
-            })
-            .accessibilityLabel("Movement joystick")
-            Spacer()
-            VStack(spacing: 10) {
-                Button("JUMP") { model.jump() }.buttonStyle(GameButtonStyle())
-                Button(model.sprinting ? "RUNNING" : "RUN") { model.toggleSprinting() }
-                    .buttonStyle(GameButtonStyle(active: model.sprinting))
-            }
-        }
-    }
-}
-
 struct GameButtonStyle: ButtonStyle {
     var active = false
     func makeBody(configuration: Configuration) -> some View {
@@ -89,4 +53,3 @@ struct ErrorView: View {
         }
     }
 }
-

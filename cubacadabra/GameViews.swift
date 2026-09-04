@@ -1,27 +1,14 @@
 import SwiftUI
 struct GameSessionView: View {
     let model: GameViewModel
-    let openSafety: () -> Void
 
     var body: some View {
-        GameSurface(
-            model: model,
-            onSafety: openSafety
-        )
+        GameSurface(model: model)
     }
 }
 
 struct GameSurface: View {
     @ObservedObject var model: GameViewModel
-    let onSafety: () -> Void
-
-    init(
-        model: GameViewModel,
-        onSafety: @escaping () -> Void = {}
-    ) {
-        self.model = model
-        self.onSafety = onSafety
-    }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -42,11 +29,6 @@ struct GameSurface: View {
             }
             VStack(alignment: .leading, spacing: 0) {
                 if model.worldID != "settings" {
-                    if model.worldID == "lobby" {
-                        GameHeader(model: model, onSafety: onSafety)
-                            .padding(.horizontal, 20)
-                            .padding(.top, 18)
-                    }
                     if let notice = model.presenceNotice {
                         PresenceNoticeView(notice: notice)
                             .padding(.horizontal, 20)
@@ -63,11 +45,6 @@ struct GameSurface: View {
                     }
                 }
                 Spacer()
-                if model.worldID == "lobby" {
-                    GameControls(model: model)
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 18)
-                }
             }
             .ignoresSafeArea(edges: .bottom)
             .animation(.easeOut(duration: 0.22), value: model.presenceNotice)
@@ -186,104 +163,5 @@ private struct GameAtmosphere: View {
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
-    }
-}
-
-struct GameHeader: View {
-    @ObservedObject var model: GameViewModel
-    let onSafety: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(model.world()?.scene.eyebrow.uppercased() ?? "CUBACADABRA")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .tracking(1.8)
-                        .foregroundStyle(.white.opacity(0.64))
-                    Text(model.world()?.scene.title ?? "First Game")
-                        .font(.system(size: 29, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                    Text(model.world()?.scene.description ?? "")
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.72))
-                        .lineLimit(2)
-                }
-                Spacer(minLength: 12)
-                VStack(alignment: .trailing, spacing: 4) {
-                    HStack(spacing: 8) {
-                        Button(action: onSafety) {
-                            Image(systemName: "person.2.badge.gearshape")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .frame(width: 44, height: 44)
-                                .background(.white.opacity(0.14), in: Circle())
-                        }
-                        .accessibilityLabel("Players and safety")
-                    }
-                    Text(model.worldID == "lobby" ? "LOBBY" : "SESSION")
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
-                        .tracking(1.4)
-                        .foregroundStyle(.white.opacity(0.64))
-                    Text("\((model.frame?.agents.count ?? 0) + 1) PLAYERS")
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(connectionColor)
-                            .frame(width: 7, height: 7)
-                        Text(model.connectionState.label)
-                            .font(.system(size: 9, weight: .bold, design: .rounded))
-                            .tracking(0.9)
-                            .foregroundStyle(.white.opacity(0.68))
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Cloud connection \(model.connectionState.label.lowercased())")
-                }
-            }
-            if model.worldID == "lobby" {
-                HStack(spacing: 8) {
-                    ForEach(Array((model.world()?.launchPads ?? []).enumerated()), id: \.element.id) { index, pad in
-                        let live = model.frame?.pads[safe: index]
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(pad.code)
-                                .font(.system(size: 10, weight: .bold, design: .rounded))
-                                .tracking(0.8)
-                            Text(model.lobbyLaunchStatus(for: pad, live: live))
-                                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                .foregroundStyle(.white.opacity(pad.enabled ? 0.78 : 0.48))
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(10)
-                        .background(.white.opacity(pad.enabled ? 0.09 : 0.045), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay {
-                            if !pad.enabled {
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(.white.opacity(0.08), style: StrokeStyle(lineWidth: 1, dash: [3, 4]))
-                            }
-                        }
-                        .opacity(pad.enabled ? 1 : 0.72)
-                    }
-                }
-            }
-        }
-        .padding(16)
-        .background(.black.opacity(0.28), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(.white.opacity(0.14), lineWidth: 1))
-    }
-
-    private func status(for pad: EnginePad?) -> String {
-        guard let pad else { return "WAITING" }
-        if pad.phase == 2 { return "LAUNCHING" }
-        if pad.seconds > 0 { return String(format: "%.1fs · %d", pad.seconds, pad.occupants) }
-        return pad.occupants == 0 ? "WAITING" : "ASSEMBLING"
-    }
-
-    private var connectionColor: Color {
-        switch model.connectionState {
-        case .connected: return Color(red: 0.39, green: 0.68, blue: 0.45)
-        case .connecting, .reconnecting: return Color(red: 0.88, green: 0.72, blue: 0.29)
-        case .disconnected: return Color(red: 0.76, green: 0.37, blue: 0.34)
-        }
     }
 }
