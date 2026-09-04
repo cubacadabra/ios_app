@@ -11,69 +11,91 @@ struct GameSurface: View {
     @ObservedObject var model: GameViewModel
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            if let engine = model.renderEngine {
-                RustGameSurface(
-                    engine: engine,
-                    isActive: true,
-                    onLookChanged: { model.lookChanged(to: $0) },
-                    onLookEnded: { model.lookEnded() },
-                    onZoomDelta: { model.zoomChangedBy(delta: $0) },
-                    onZoomEnded: { model.zoomEnded() },
-                    onWorldTap: { model.requestUsernameEdit() }
-                )
-                .ignoresSafeArea()
-            }
-            if model.worldID != "settings" {
-                GameAtmosphere(isSession: model.worldID != "lobby")
-            }
-            VStack(alignment: .leading, spacing: 0) {
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                if let engine = model.renderEngine {
+                    RustGameSurface(
+                        engine: engine,
+                        isActive: true,
+                        onLookChanged: { model.lookChanged(to: $0) },
+                        onLookEnded: { model.lookEnded() },
+                        onZoomDelta: { model.zoomChangedBy(delta: $0) },
+                        onZoomEnded: { model.zoomEnded() },
+                        onWorldTap: { model.requestUsernameEdit() }
+                    )
+                    .ignoresSafeArea()
+                }
                 if model.worldID != "settings" {
-                    if let notice = model.presenceNotice {
-                        PresenceNoticeView(notice: notice)
+                    GameAtmosphere(isSession: model.worldID != "lobby")
+                }
+                VStack(alignment: .leading, spacing: 0) {
+                    if model.worldID != "settings" {
+                        if let notice = model.presenceNotice {
+                            PresenceNoticeView(notice: notice)
+                                .padding(.horizontal, 20)
+                                .padding(.top, 10)
+                                .transition(.move(edge: .top).combined(with: .opacity))
+                        }
+                        if let notice = model.moderationNotice {
+                            ModerationNoticeView(notice: notice) {
+                                model.dismissModerationNotice()
+                            }
                             .padding(.horizontal, 20)
                             .padding(.top, 10)
                             .transition(.move(edge: .top).combined(with: .opacity))
-                    }
-                    if let notice = model.moderationNotice {
-                        ModerationNoticeView(notice: notice) {
-                            model.dismissModerationNotice()
                         }
-                        .padding(.horizontal, 20)
-                        .padding(.top, 10)
-                        .transition(.move(edge: .top).combined(with: .opacity))
                     }
-                }
-                Spacer()
-            }
-            .ignoresSafeArea(edges: .bottom)
-            .animation(.easeOut(duration: 0.22), value: model.presenceNotice)
-            if let notice = model.buildActionNotice, model.worldID == "real-game" {
-                VStack {
                     Spacer()
-                    Text(notice)
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color.white)
-                        .padding(.horizontal, 16)
-                        .frame(minHeight: 44)
-                        .background(Color(red: 9 / 255, green: 26 / 255, blue: 34 / 255).opacity(0.94), in: Capsule())
-                        .overlay(Capsule().stroke(Color.white.opacity(0.30), lineWidth: 1.5))
-                        .shadow(color: .black.opacity(0.32), radius: 8, y: 4)
-                        .padding(.bottom, 112)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .accessibilityLabel(notice)
                 }
-                .frame(maxWidth: .infinity)
-                .allowsHitTesting(false)
-            }
-            if model.usernameEditorOpen {
-                UsernameEditorView(model: model)
-                    .transition(.opacity)
-                    .zIndex(2)
+                .ignoresSafeArea(edges: .bottom)
+                .animation(.easeOut(duration: 0.22), value: model.presenceNotice)
+                if let notice = model.buildActionNotice, model.worldID == "real-game" {
+                    VStack {
+                        Spacer()
+                        Text(notice)
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.white)
+                            .padding(.horizontal, 16)
+                            .frame(minHeight: 44)
+                            .background(Color(red: 9 / 255, green: 26 / 255, blue: 34 / 255).opacity(0.94), in: Capsule())
+                            .overlay(Capsule().stroke(Color.white.opacity(0.30), lineWidth: 1.5))
+                            .shadow(color: .black.opacity(0.32), radius: 8, y: 4)
+                            .padding(.bottom, 112)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                            .accessibilityLabel(notice)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .allowsHitTesting(false)
+                }
+                if model.usernameEditorOpen {
+                    UsernameEditorView(model: model)
+                        .transition(.opacity)
+                        .zIndex(2)
+                }
+                if proxy.size.height > proxy.size.width * 1.25 {
+                    PortraitGameNotice()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .padding(.top, 18)
+                        .allowsHitTesting(false)
+                }
             }
         }
         .background(Color.black)
+        .ignoresSafeArea()
         .animation(.easeOut(duration: 0.18), value: model.buildActionNotice)
+    }
+}
+
+private struct PortraitGameNotice: View {
+    var body: some View {
+        Label("LANDSCAPE VIEW", systemImage: "rectangle.landscape.rotate")
+            .font(.system(size: 11, weight: .bold, design: .rounded))
+            .tracking(1.1)
+            .foregroundStyle(.white.opacity(0.86))
+            .padding(.horizontal, 14)
+            .frame(minHeight: 36)
+            .background(.black.opacity(0.54), in: Capsule())
+            .overlay(Capsule().stroke(.white.opacity(0.18), lineWidth: 1))
     }
 }
 

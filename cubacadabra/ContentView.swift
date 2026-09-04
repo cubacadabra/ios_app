@@ -1,12 +1,26 @@
 import Combine
 import SwiftUI
 
+@MainActor
 struct ContentView: View {
-    @StateObject private var model = GameViewModel()
+    @StateObject private var model: GameViewModel
+    @StateObject private var orientationController: AppOrientationController
     @State private var gamePresented = false
     @State private var safetyCenterPresented = false
     @State private var pausedForSafety = false
     private let tick = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
+
+    @MainActor
+    init() {
+        _model = StateObject(wrappedValue: GameViewModel())
+        _orientationController = StateObject(wrappedValue: AppOrientationController())
+    }
+
+    @MainActor
+    init(orientationController: AppOrientationController) {
+        _model = StateObject(wrappedValue: GameViewModel())
+        _orientationController = StateObject(wrappedValue: orientationController)
+    }
 
     var body: some View {
         ZStack {
@@ -43,6 +57,7 @@ struct ContentView: View {
             }
         }
         .onChange(of: gamePresented) { isPresented in
+            orientationController.setGameActive(isPresented)
             if isPresented {
                 pausedForSafety = false
                 model.enterGame()
