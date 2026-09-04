@@ -21,8 +21,8 @@ struct cubacadabraApp: App {
 }
 
 /// Coordinates the gameplay orientation preference with the scene geometry.
-/// iPadOS can ignore the lock while the app is windowed, so the renderer and
-/// SwiftUI surface still receive every size the scene gives them.
+/// iPadOS can decline a geometry request while the app is windowed, so the
+/// renderer and SwiftUI surface still receive every size the scene gives them.
 @MainActor
 final class AppOrientationController: ObservableObject {
     @Published private(set) var isGameActive = false
@@ -34,16 +34,17 @@ final class AppOrientationController: ObservableObject {
             windowScene.sizeRestrictions?.minimumSize = CGSize(width: 600, height: 400)
         }
         if isGameActive {
+            updateOrientationPreferences()
             requestLandscape()
         }
     }
 
     func setGameActive(_ isActive: Bool) {
         isGameActive = isActive
+        updateOrientationPreferences()
         if isActive {
             requestLandscape()
         }
-        updateOrientationLockPreference()
     }
 
     private func requestLandscape() {
@@ -57,11 +58,11 @@ final class AppOrientationController: ObservableObject {
         }
     }
 
-    private func updateOrientationLockPreference() {
-        guard #available(iOS 26.0, *) else { return }
-        windowScene?.windows.first(where: \.isKeyWindow)?
-            .rootViewController?
-            .setNeedsUpdateOfPrefersInterfaceOrientationLocked()
+    private func updateOrientationPreferences() {
+        guard let rootViewController = windowScene?.windows.first(where: \.isKeyWindow)?.rootViewController else {
+            return
+        }
+        rootViewController.setNeedsUpdateOfSupportedInterfaceOrientations()
     }
 }
 
@@ -124,11 +125,6 @@ final class GameHostingController: UIHostingController<ContentView> {
     }
 
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
-        .all
-    }
-
-    @available(iOS 26.0, *)
-    override var prefersInterfaceOrientationLocked: Bool {
-        orientationController.isGameActive
+        orientationController.isGameActive ? .landscape : .all
     }
 }
