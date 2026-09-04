@@ -3,17 +3,24 @@ set -eu
 
 project_dir="${PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 manifest_path="$project_dir/../rust/Cargo.toml"
-game_script_source="$project_dir/../first-game/game.luau"
-game_script_destination="$project_dir/cubacadabra/Resources/game.luau"
+game_builder="$project_dir/../first-game/scripts/build_game.sh"
+game_package_build="${DERIVED_FILE_DIR:-$project_dir/rust/build}/game-package"
+game_resources_destination="$project_dir/cubacadabra/Resources"
 output_dir="${DERIVED_FILE_DIR:-$project_dir/rust/build}/cubacadabra-engine"
 cargo_target_dir="${CARGO_TARGET_DIR:-${DERIVED_FILE_DIR:-$project_dir/rust/build}/rust-target}"
 
-if [ ! -f "$game_script_source" ]; then
-  echo "First-game script not found: $game_script_source" >&2
+if [ ! -x "$game_builder" ]; then
+  echo "First-game package builder not found: $game_builder" >&2
   exit 1
 fi
-echo "Copying first-game/game.luau into the iOS bundle resources."
-cp "$game_script_source" "$game_script_destination"
+echo "Building first-game package into the iOS bundle resources."
+"$game_builder" --output "$game_package_build"
+cp "$game_package_build/manifest.json" "$game_resources_destination/manifest.json"
+cp "$game_package_build/game.luau" "$game_resources_destination/game.luau"
+if [ -d "$game_package_build/assets" ]; then
+  mkdir -p "$game_resources_destination/assets"
+  cp -R "$game_package_build/assets/." "$game_resources_destination/assets/"
+fi
 
 if ! command -v rustc >/dev/null 2>&1 || ! command -v cargo >/dev/null 2>&1; then
   if [ -x "${HOME:-}/.cargo/bin/rustup" ]; then

@@ -206,26 +206,33 @@ enum AppLinks {
 struct GamePackageLoader {
     var baseURL = ClientConfiguration.gameBaseURL
     private static let cachedManifestKey = "cubacadabra.cached-manifest"
+    private static let cachedScriptKey = "cubacadabra.cached-script"
     private static let maximumManifestBytes = 512_000
+    private static let maximumScriptBytes = 512_000
 
     func load() async throws -> LoadedGamePackage {
         let bundled = try loadBundledPackage()
-        if let cached = cachedManifestData(),
-           let cachedPackage = try? makePackage(manifestData: cached, script: bundled.script) {
+        if let cachedManifest = cachedManifestData(),
+           let cachedScript = cachedScriptData(),
+           let cachedPackage = try? makePackage(manifestData: cachedManifest, script: cachedScript) {
             return cachedPackage
         }
         return bundled
     }
 
-    /// Refreshes declarative game content for the next launch. Executable game
-    /// rules always remain bundled in the app and are never downloaded.
-    func refreshManifest() async {
+    /// Refreshes the validated package for the next launch. The bundled
+    /// package remains the offline fallback if the host is unavailable.
+    func refreshPackage() async {
         let manifestURL = baseURL.appendingPathComponent("manifest.json")
-        guard let data = try? await fetch(manifestURL),
-              (try? makePackage(manifestData: data, script: "")) != nil else {
+        let scriptURL = baseURL.appendingPathComponent("game.luau")
+        guard let manifestData = try? await fetch(manifestURL, maximumBytes: Self.maximumManifestBytes),
+              let scriptData = try? await fetch(scriptURL, maximumBytes: Self.maximumScriptBytes),
+              let script = String(data: scriptData, encoding: .utf8),
+              (try? makePackage(manifestData: manifestData, script: script)) != nil else {
             return
         }
-        UserDefaults.standard.set(data, forKey: Self.cachedManifestKey)
+        UserDefaults.standard.set(manifestData, forKey: Self.cachedManifestKey)
+        UserDefaults.standard.set(script, forKey: Self.cachedScriptKey)
     }
 
     private func loadBundledPackage() throws -> LoadedGamePackage {
@@ -248,7 +255,16 @@ struct GamePackageLoader {
         return data
     }
 
+    private func cachedScriptData() -> String? {
+        guard let script = UserDefaults.standard.string(forKey: Self.cachedScriptKey),
+              script.utf8.count <= Self.maximumScriptBytes else { return nil }
+        return script
+    }
+
     private func makePackage(manifestData: Data, script: String) throws -> LoadedGamePackage {
+        guard !script.isEmpty, script.utf8.count <= Self.maximumScriptBytes else {
+            throw GamePackageError.invalidScript
+        }
         guard manifestData.count <= Self.maximumManifestBytes,
               let manifest = String(data: manifestData, encoding: .utf8) else {
             throw GamePackageError.invalidBundledPackage
@@ -265,14 +281,14 @@ struct GamePackageLoader {
         return LoadedGamePackage(package: package, manifest: manifest, script: script)
     }
 
-    private func fetch(_ url: URL) async throws -> Data {
+    private func fetch(_ url: URL, maximumBytes: Int) async throws -> Data {
         var request = URLRequest(url: url)
         request.timeoutInterval = 5
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw GamePackageError.httpFailure((response as? HTTPURLResponse)?.statusCode ?? 0)
         }
-        guard data.count <= Self.maximumManifestBytes else {
+        guard data.count <= maximumBytes else {
             throw GamePackageError.invalidBundledPackage
         }
         return data

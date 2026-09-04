@@ -124,7 +124,7 @@ final class GameViewModel: ObservableObject {
             lastTick = nil
             isLoading = false
             Task { [weak self] in
-                await loader.refreshManifest()
+                await loader.refreshPackage()
                 await self?.refreshBlockedPlayers()
             }
         } catch {

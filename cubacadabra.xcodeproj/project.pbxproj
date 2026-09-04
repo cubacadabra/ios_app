@@ -125,6 +125,7 @@
 			inputPaths = (
 				"$(SRCROOT)/../rust/Cargo.toml",
 				"$(SRCROOT)/scripts/build_rust_engine.sh",
+				"$(SRCROOT)/../first-game/scripts/build_game.sh",
 				"$(SRCROOT)/cubacadabra/cubacadabra_engine.h",
 			);
 			name = "Build Rust engine";

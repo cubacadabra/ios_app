@@ -8,7 +8,7 @@ player presence and movement.
 The repositories fit together like this:
 
 ```text
-first-game  -> manifest.json + game.luau (content and rules)
+first-game  -> src/ + manifest.json (source package)
 rust        -> static library (simulation, scripting host, renderer)
 web         -> package host and browser client
 backend     -> multiplayer Worker and world WebSockets
@@ -43,9 +43,10 @@ Game package: http://localhost:5173/games/first-game/
 Backend:      ws://localhost:8787
 ```
 
-The Xcode build phase compiles the sibling Rust crate for the selected iOS
-target and links the resulting static library. You do not need to build Rust
-separately for the normal Xcode workflow.
+The Xcode build phase first builds the sibling game package, stages its runtime
+files into `cubacadabra/Resources/`, then compiles the Rust crate for the
+selected iOS target and links the resulting static library. You do not need to
+build Rust separately for the normal Xcode workflow.
 
 ## Run on a physical device over the dev LAN
 

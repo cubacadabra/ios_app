@@ -1,5 +1,7 @@
 xcuserdata/
 cubacadabra/Resources/game.luau
+cubacadabra/Resources/game-package/
+cubacadabra/Resources/assets/
 *.hmap
 *.ipa
 *.dSYM.zip
