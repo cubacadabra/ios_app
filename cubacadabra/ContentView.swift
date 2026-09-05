@@ -1,16 +1,12 @@
 import Combine
 import SwiftUI
 
-private enum AppRoute: Hashable {
-    case game
-}
-
 @MainActor
 struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var model: GameViewModel
     @StateObject private var orientationController: AppOrientationController
-    @State private var path: [AppRoute] = []
+    @State private var gamePresented = false
     @State private var safetyCenterPresented = false
     private let tick = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
 
@@ -27,33 +23,29 @@ struct ContentView: View {
     }
 
     var body: some View {
-        NavigationStack(path: $path) {
+        NavigationStack {
             rootView
-            .navigationDestination(for: AppRoute.self) { route in
-                switch route {
-                case .game:
-                    GameSessionView(model: model)
-                }
+            .navigationDestination(isPresented: $gamePresented) {
+                GameSessionView(model: model)
             }
         }
         .task {
             await model.load()
         }
         .onReceive(tick) { date in
-            if path.contains(.game) { model.tick(at: date) }
+            if gamePresented { model.tick(at: date) }
         }
         .onChange(of: model.safetyRequestID) { _ in
-            guard path.contains(.game) else { return }
+            guard gamePresented else { return }
             model.pauseGame()
-            path.removeAll()
+            gamePresented = false
             DispatchQueue.main.async { safetyCenterPresented = true }
         }
         .onChange(of: model.gameExitRequestID) { _ in
-            guard path.contains(.game) else { return }
-            path.removeAll()
+            guard gamePresented else { return }
+            gamePresented = false
         }
-        .onChange(of: path) { newPath in
-            let isPresented = newPath.contains(.game)
+        .onChange(of: gamePresented) { isPresented in
             orientationController.setGameActive(isPresented)
             if isPresented {
                 model.enterGame()
@@ -67,7 +59,7 @@ struct ContentView: View {
         }
         .onChange(of: model.isAuthenticated) { isAuthenticated in
             if !isAuthenticated {
-                path.removeAll()
+                gamePresented = false
             }
         }
         .onDisappear { model.disconnect() }
@@ -91,7 +83,7 @@ struct ContentView: View {
         } else {
             MainMenuView(model: model) { game in
                 try await model.selectGame(game)
-                path.append(.game)
+                gamePresented = true
             }
         }
     }
