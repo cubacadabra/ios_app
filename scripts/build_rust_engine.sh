@@ -8,6 +8,13 @@ game_package_build="${DERIVED_FILE_DIR:-$project_dir/rust/build}/game-package"
 game_resources_destination="$project_dir/cubacadabra/Resources"
 output_dir="${DERIVED_FILE_DIR:-$project_dir/rust/build}/cubacadabra-engine"
 cargo_target_dir="${CARGO_TARGET_DIR:-${DERIVED_FILE_DIR:-$project_dir/rust/build}/rust-target}"
+rust_profile=debug
+cargo_profile_args=
+
+if [ "${CONFIGURATION:-Debug}" = "Release" ]; then
+  rust_profile=release
+  cargo_profile_args=--release
+fi
 
 if [ ! -x "$game_builder" ]; then
   echo "First-game package builder not found: $game_builder" >&2
@@ -58,8 +65,8 @@ for rust_target in $rust_targets; do
   if ! $rustc_command --print target-libdir --target "$rust_target" >/dev/null 2>&1; then
     rustup target add "$rust_target"
   fi
-  CARGO_TARGET_DIR="$cargo_target_dir" $cargo_command build --manifest-path "$manifest_path" --target "$rust_target" --release
-  set -- "$@" "$cargo_target_dir/$rust_target/release/libcubacadabra_engine.a"
+  CARGO_TARGET_DIR="$cargo_target_dir" $cargo_command build --manifest-path "$manifest_path" --target "$rust_target" $cargo_profile_args
+  set -- "$@" "$cargo_target_dir/$rust_target/$rust_profile/libcubacadabra_engine.a"
 done
 
 if [ "$#" -eq 0 ]; then
