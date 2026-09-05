@@ -3,6 +3,10 @@ import UIKit
 
 @MainActor
 final class NativeGoogleSignInService {
+    func signOut() {
+        GIDSignIn.sharedInstance.signOut()
+    }
+
     func signIn() async throws -> String {
         guard let presentingViewController = UIApplication.shared.activeRootViewController else {
             throw AppAuthError.unavailable

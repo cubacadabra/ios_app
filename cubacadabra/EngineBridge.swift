@@ -127,6 +127,10 @@ final class EngineBridge {
         )
     }
 
+    func setAuthenticated(_ authenticated: Bool) {
+        engine_set_authenticated(handle, authenticated ? 1 : 0)
+    }
+
     @discardableResult
     func uiPointer(pointerID: UInt64, phase: UInt8, x: Float, y: Float) -> Bool {
         engine_ui_pointer(handle, pointerID, phase, x, y) != 0

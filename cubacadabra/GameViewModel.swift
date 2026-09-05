@@ -162,9 +162,12 @@ final class GameViewModel: ObservableObject {
     func refreshAuthentication() {
         guard engine != nil else { return }
         Task { [weak self] in
-            guard let self,
-                  let authResult = await authentication.restore() else { return }
-            applyAuthentication(authResult)
+            guard let self else { return }
+            if let authResult = await authentication.restore() {
+                applyAuthentication(authResult)
+            } else {
+                clearAuthentication()
+            }
         }
     }
 
@@ -283,6 +286,8 @@ final class GameViewModel: ObservableObject {
                 UIApplication.shared.open(AppLinks.about)
             case "shared.sign_in" where event.phase == "activate":
                 beginSignIn()
+            case "shared.sign_out" where event.phase == "activate":
+                signOut()
             case "build.tool" where event.phase == "activate":
                 let tools = ["place", "rotate", "remove", "recolor"]
                 buildTool = tools[(tools.firstIndex(of: buildTool).map { ($0 + 1) % tools.count } ?? 0)]
@@ -325,7 +330,7 @@ final class GameViewModel: ObservableObject {
                 }
             }
         } else {
-            beginSignIn()
+            beginSignIn(thenOpenBrowserMyCube: true)
         }
     }
 
@@ -364,7 +369,7 @@ final class GameViewModel: ObservableObject {
         jumpQueued = false
     }
 
-    private func beginSignIn() {
+    private func beginSignIn(thenOpenBrowserMyCube: Bool = false) {
         guard !isSigningIn else { return }
         isSigningIn = true
         authenticationNotice = nil
@@ -374,17 +379,24 @@ final class GameViewModel: ObservableObject {
                 let credential = try await googleSignIn.signIn()
                 let result = try await authentication.authenticateGoogle(credential: credential)
                 applyAuthentication(result)
-                guard let browserCode = result.browserHandoffCode else {
-                    throw AppAuthError.invalidResponse
+                if thenOpenBrowserMyCube, let browserCode = result.browserHandoffCode {
+                    openBrowserMyCube(browserCode: browserCode)
                 }
-                openBrowserMyCube(browserCode: browserCode)
             } catch let error as AppAuthError where error == .cancelled {
                 // The user dismissed the Google sign-in flow.
             } catch {
+                gameLog.error("Native sign-in failed: \(error.localizedDescription, privacy: .public)")
                 authenticationNotice = "We couldn’t sign you in. Try again."
             }
             isSigningIn = false
         }
+    }
+
+    private func signOut() {
+        guard !isSigningIn else { return }
+        authentication.clearTokens()
+        googleSignIn.signOut()
+        clearAuthentication()
     }
 
     func cancelUsernameEdit() {
@@ -547,12 +559,20 @@ final class GameViewModel: ObservableObject {
         isAuthenticated = true
         authUser = result.user
         authenticationNotice = nil
+        engine?.setAuthenticated(true)
         worldSocket.setAccessToken(result.accessToken)
         if let serverUsername = result.user.username, !serverUsername.isEmpty {
             worldSocket.adoptUsername(serverUsername)
             username = serverUsername
             engine?.setUsername(serverUsername)
         }
+    }
+
+    private func clearAuthentication() {
+        isAuthenticated = false
+        authUser = nil
+        engine?.setAuthenticated(false)
+        worldSocket.setAccessToken(nil)
     }
 
     private func handleMovementEvent(_ event: WorldMovementEvent) {
