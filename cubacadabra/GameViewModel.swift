@@ -281,6 +281,8 @@ final class GameViewModel: ObservableObject {
                 safetyRequestID &+= 1
             case "shared.about.open" where event.phase == "activate":
                 UIApplication.shared.open(AppLinks.about)
+            case "shared.sign_in" where event.phase == "activate":
+                beginSignIn()
             case "build.tool" where event.phase == "activate":
                 let tools = ["place", "rotate", "remove", "recolor"]
                 buildTool = tools[(tools.firstIndex(of: buildTool).map { ($0 + 1) % tools.count } ?? 0)]
