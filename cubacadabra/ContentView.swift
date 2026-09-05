@@ -7,6 +7,7 @@ struct ContentView: View {
     @StateObject private var model: GameViewModel
     @StateObject private var orientationController: AppOrientationController
     @State private var gamePresented = false
+    @State private var didAutoEnterFreshInstall = false
     @State private var safetyCenterPresented = false
     private let tick = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
 
@@ -31,6 +32,7 @@ struct ContentView: View {
         }
         .task {
             await model.load()
+            autoEnterFreshInstallIfReady()
         }
         .onReceive(tick) { date in
             if gamePresented { model.tick(at: date) }
@@ -66,6 +68,16 @@ struct ContentView: View {
         .sheet(isPresented: $safetyCenterPresented) {
             SafetyCenterView(model: model)
         }
+    }
+
+    private func autoEnterFreshInstallIfReady() {
+        guard model.isFreshInstall,
+              !didAutoEnterFreshInstall,
+              !model.isLoading,
+              model.errorMessage == nil,
+              !gamePresented else { return }
+        didAutoEnterFreshInstall = true
+        gamePresented = true
     }
 
     @ViewBuilder

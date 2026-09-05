@@ -61,6 +61,7 @@ final class GameViewModel: ObservableObject {
     @Published private(set) var hasEnteredGame = false
     @Published private(set) var selectedGameID = "first-game"
     @Published private(set) var isSelectingGame = false
+    private(set) var isFreshInstall = false
     @Published var sprinting = false
 
     var selectedGame: GameCatalogEntry {
@@ -94,8 +95,9 @@ final class GameViewModel: ObservableObject {
         // UserDefaults marker does not survive deletion, so a missing marker
         // means this is a fresh install and the old signed-in session must not
         // put the user straight back into an under-13 gate.
+        isFreshInstall = UserDefaults.standard.string(forKey: installationMarkerKey) == nil
         let hasLocalInstallData = UserDefaults.standard.string(forKey: "cubacadabra.player-id") != nil
-        if UserDefaults.standard.string(forKey: installationMarkerKey) == nil {
+        if isFreshInstall {
             UserDefaults.standard.set(UUID().uuidString, forKey: installationMarkerKey)
             if !hasLocalInstallData {
                 authentication.clearTokens()

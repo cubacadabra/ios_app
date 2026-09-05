@@ -94,6 +94,27 @@ final class EngineBridge {
         }
     }
 
+    @discardableResult
+    func setLocalAppearance(_ source: String) -> UInt8 {
+        let bytes = Array(source.utf8)
+        return bytes.withUnsafeBytes { rawBuffer in
+            let pointer = rawBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self)
+            return engine_set_local_appearance_json(handle, pointer, UInt(bytes.count))
+        }
+    }
+
+    @discardableResult
+    func applyRemoteUpdate(_ data: Data) -> UInt8 {
+        data.withUnsafeBytes { rawBuffer in
+            let pointer = rawBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self)
+            return engine_apply_remote_update_json(handle, pointer, UInt(data.count))
+        }
+    }
+
+    func resetRemoteSession() {
+        engine_reset_remote_session(handle)
+    }
+
     func setInput(
         forward: Float,
         strafe: Float,
