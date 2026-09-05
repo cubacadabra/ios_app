@@ -335,6 +335,49 @@ final class GameViewModel: ObservableObject {
         }
     }
 
+    /// Starts the account flow from the app's full-screen sign-in state.
+    func signIn() {
+        beginSignIn()
+    }
+
+    /// Ends the signed-in session and leaves the app at its sign-in screen.
+    /// The profile's birthday is server-owned and is never removed locally.
+    func logOut() {
+        authentication.clearTokens()
+        googleSignIn.signOut()
+        worldSocket.disconnect()
+        connectedWorldID = nil
+        hasEnteredGame = false
+        isAuthenticated = false
+        authUser = nil
+        authenticationNotice = nil
+        engine?.setAuthenticated(false)
+        worldSocket.setAccessToken(nil)
+    }
+
+    var profileAge: Int? {
+        guard let dob = authUser?.dateOfBirth else { return nil }
+        return Self.calculateAge(from: dob)
+    }
+
+    var needsBirthday: Bool {
+        isAuthenticated && authUser?.dateOfBirth == nil
+    }
+
+    var isUnderThirteen: Bool {
+        profileAge.map { $0 < 13 } ?? false
+    }
+
+    func storedParentEmail() -> String {
+        guard let userID = authUser?.id else { return "" }
+        return UserDefaults.standard.string(forKey: "cubacadabra.parent-email.\(userID)") ?? ""
+    }
+
+    func saveParentEmail(_ email: String) {
+        guard let userID = authUser?.id else { return }
+        UserDefaults.standard.set(email, forKey: "cubacadabra.parent-email.\(userID)")
+    }
+
     func selectGame(_ game: GameCatalogEntry) async throws {
         guard GameCatalogEntry.available.contains(game) else { throw GamePackageError.invalidGameID }
         guard selectedGameID != game.id || package == nil else { return }
@@ -610,6 +653,19 @@ final class GameViewModel: ObservableObject {
         authUser = nil
         engine?.setAuthenticated(false)
         worldSocket.setAccessToken(nil)
+    }
+
+    private static func calculateAge(from dob: String) -> Int? {
+        let values = dob.split(separator: "-").compactMap { Int($0) }
+        guard values.count == 3,
+              let year = values[safe: 0],
+              let month = values[safe: 1],
+              let day = values[safe: 2] else { return nil }
+        let now = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+        guard let currentYear = now.year else { return nil }
+        var age = currentYear - year
+        if (now.month ?? 0, now.day ?? 0) < (month, day) { age -= 1 }
+        return age
     }
 
     private func handleMovementEvent(_ event: WorldMovementEvent) {

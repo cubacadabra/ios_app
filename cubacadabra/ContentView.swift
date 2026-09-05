@@ -11,10 +11,7 @@ struct ContentView: View {
     @StateObject private var model: GameViewModel
     @StateObject private var orientationController: AppOrientationController
     @State private var path: [AppRoute] = []
-    @State private var didAutoEnterGame = false
     @State private var safetyCenterPresented = false
-    @State private var myCubePresented = false
-    @State private var pausedForSafety = false
     private let tick = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
 
     @MainActor
@@ -31,21 +28,7 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            ZStack {
-                if model.isLoading {
-                    LoadingView()
-                } else if let message = model.errorMessage {
-                    ErrorView(message: message, retry: model.retry)
-                } else {
-                    HomeView(
-                        model: model,
-                        safetyCenterPresented: $safetyCenterPresented,
-                        openMyCube: model.requestMyCube,
-                        enterGame: enterGame,
-                        leaveGame: { model.leaveGame() }
-                    )
-                }
-            }
+            rootView
             .navigationDestination(for: AppRoute.self) { route in
                 switch route {
                 case .game:
@@ -55,73 +38,62 @@ struct ContentView: View {
         }
         .task {
             await model.load()
-            autoEnterGameIfReady()
         }
         .onReceive(tick) { date in
-            if gameIsPresented {
-                model.tick(at: date)
-            }
+            if path.contains(.game) { model.tick(at: date) }
         }
         .onChange(of: model.safetyRequestID) { _ in
-            guard gameIsPresented else { return }
-            pausedForSafety = true
+            guard path.contains(.game) else { return }
             model.pauseGame()
             path.removeAll()
-            DispatchQueue.main.async {
-                safetyCenterPresented = true
-            }
+            DispatchQueue.main.async { safetyCenterPresented = true }
         }
         .onChange(of: model.gameExitRequestID) { _ in
-            guard gameIsPresented else { return }
+            guard path.contains(.game) else { return }
             path.removeAll()
-        }
-        .onChange(of: model.isLoading) { _ in
-            autoEnterGameIfReady()
-        }
-        .onChange(of: model.myCubeRequestID) { _ in
-            path.removeAll()
-            myCubePresented = true
         }
         .onChange(of: path) { newPath in
             let isPresented = newPath.contains(.game)
             orientationController.setGameActive(isPresented)
             if isPresented {
-                pausedForSafety = false
                 model.enterGame()
-            } else if !pausedForSafety {
-                safetyCenterPresented = false
-                model.exitToHome()
             } else {
-                pausedForSafety = false
+                model.exitToHome()
             }
         }
         .onChange(of: scenePhase) { phase in
             guard phase == .active else { return }
             model.refreshAuthentication()
         }
-        .onDisappear { model.disconnect() }
-        .sheet(isPresented: $myCubePresented) {
-            MyCubeView(model: model) { _ in
-                enterGame()
+        .onChange(of: model.isAuthenticated) { isAuthenticated in
+            if !isAuthenticated {
+                path.removeAll()
             }
+        }
+        .onDisappear { model.disconnect() }
+        .sheet(isPresented: $safetyCenterPresented) {
+            SafetyCenterView(model: model)
         }
     }
 
-    private var gameIsPresented: Bool {
-        path.contains(.game)
-    }
-
-    private func enterGame() {
-        guard !gameIsPresented else { return }
-        path.append(.game)
-    }
-
-    private func autoEnterGameIfReady() {
-        guard !didAutoEnterGame,
-              !model.isLoading,
-              model.errorMessage == nil else { return }
-        didAutoEnterGame = true
-        enterGame()
+    @ViewBuilder
+    private var rootView: some View {
+        if model.isLoading {
+            LoadingView()
+        } else if let message = model.errorMessage {
+            ErrorView(message: message, retry: model.retry)
+        } else if !model.isAuthenticated {
+            SignInView(model: model)
+        } else if model.needsBirthday {
+            BirthdayGateView(model: model)
+        } else if model.isUnderThirteen {
+            ParentEmailGateView(model: model)
+        } else {
+            MainMenuView(model: model) { game in
+                try await model.selectGame(game)
+                path.append(.game)
+            }
+        }
     }
 }
 
