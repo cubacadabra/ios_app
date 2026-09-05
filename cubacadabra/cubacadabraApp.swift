@@ -101,6 +101,20 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         configuration.delegateClass = AppSceneDelegate.self
         return configuration
     }
+
+    func application(
+        _ application: UIApplication,
+        open url: URL,
+        options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+    ) -> Bool {
+        forwardAuthCallback(url)
+    }
+
+    private func forwardAuthCallback(_ url: URL) -> Bool {
+        guard url.scheme == ClientConfiguration.authCallbackURL.scheme else { return false }
+        NotificationCenter.default.post(name: .cubacadabraAuthCallback, object: url)
+        return true
+    }
 }
 
 final class AppSceneDelegate: UIResponder, UIWindowSceneDelegate {
