@@ -302,11 +302,14 @@ final class GameViewModel: ObservableObject {
 
     func requestSettingsInteraction() {
         guard settingsRoomState == 2, !usernameEditorOpen else { return }
-        guard isAuthenticated else {
-            beginSignIn()
-            return
+        openBrowserMyCube()
+    }
+
+    private func openBrowserMyCube() {
+        UIApplication.shared.open(AppLinks.myCube) { [weak self] opened in
+            guard !opened else { return }
+            self?.authenticationNotice = "We couldn’t open My Cube. Try again."
         }
-        requestUsernameEdit()
     }
 
     private func requestUsernameEdit() {
