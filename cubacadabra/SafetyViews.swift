@@ -56,7 +56,6 @@ struct ModerationNoticeView: View {
 }
 
 struct SafetyCenterView: View {
-    @Environment(\.dismiss) private var dismiss
     let model: GameViewModel
     @State private var activePlayers: [RemotePlayerSummary]
     @State private var blockedPlayerIDs: Set<String>
@@ -133,11 +132,6 @@ struct SafetyCenterView: View {
             }
             .navigationTitle("Players & Safety")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
-                }
-            }
             .navigationDestination(
                 isPresented: Binding(
                     get: { reportTarget != nil },
