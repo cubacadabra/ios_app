@@ -145,7 +145,7 @@ final class GameViewModel: ObservableObject {
                 applyAuthentication(authResult)
             }
             Task { [weak self] in
-                await loader.refreshPackage(gameID: "first-game")
+                await self?.loader.refreshPackage(gameID: "first-game")
                 await self?.refreshBlockedPlayers()
             }
         } catch {
@@ -349,6 +349,7 @@ final class GameViewModel: ObservableObject {
         let nextPackage = loaded.package
 
         worldSocket.disconnect()
+        worldSocket.setGameID(game.id)
         connectedWorldID = nil
         pendingSessionWorldID = nil
         remotePlayers.removeAll()
@@ -525,6 +526,7 @@ final class GameViewModel: ObservableObject {
 
     func reportPlayer(_ player: RemotePlayerSummary, reason: ReportReason, details: String) {
         let service = moderationService
+        let currentWorldID = worldID
         Task { [weak self] in
             do {
                 try await service.reportPlayer(
@@ -532,7 +534,7 @@ final class GameViewModel: ObservableObject {
                     username: player.username,
                     reason: reason.rawValue,
                     details: details,
-                    worldID: worldID
+                    worldID: currentWorldID
                 )
             } catch {
                 self?.showModerationNotice("Report could not be sent. Contact support@cubacadabra.com.")

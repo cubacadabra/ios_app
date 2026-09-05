@@ -100,6 +100,7 @@ final class WorldSocketClient {
     private var generation = 0
     private var reconnectAttempt = 0
     private var stopped = true
+    private var gameID = "first-game"
     private var lastMoveSentAt = Date.distantPast.timeIntervalSinceReferenceDate
     private var lastSentMove: SentMove?
     private var pendingUsername: String
@@ -142,6 +143,11 @@ final class WorldSocketClient {
         openSocket(generation: generation)
     }
 
+    func setGameID(_ nextGameID: String) {
+        guard !nextGameID.isEmpty else { return }
+        gameID = nextGameID
+    }
+
     func disconnect() {
         guard !stopped || socketTask != nil else { return }
         stopped = true
@@ -168,7 +174,10 @@ final class WorldSocketClient {
             scheduleReconnect(generation: expectedGeneration)
             return
         }
-        components.queryItems = [URLQueryItem(name: "player_id", value: playerID)]
+        components.queryItems = [
+            URLQueryItem(name: "player_id", value: playerID),
+            URLQueryItem(name: "game", value: gameID),
+        ]
         guard let url = components.url else {
             scheduleReconnect(generation: expectedGeneration)
             return
