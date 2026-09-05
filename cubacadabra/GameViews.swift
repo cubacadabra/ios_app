@@ -4,6 +4,8 @@ struct GameSessionView: View {
 
     var body: some View {
         GameSurface(model: model)
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationBarBackButtonHidden(true)
     }
 }
 

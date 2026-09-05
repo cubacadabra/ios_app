@@ -46,6 +46,7 @@ final class GameViewModel: ObservableObject {
     @Published private(set) var remotePlayerNames: [String: String] = [:]
     @Published private(set) var blockedPlayerIDs: Set<String>
     @Published private(set) var moderationNotice: ModerationNotice?
+    @Published private(set) var gameExitRequestID = 0
     @Published private(set) var buildPrompt = ""
     @Published private(set) var buildPhase = "build"
     @Published private(set) var buildBlockCount = 0
@@ -288,6 +289,7 @@ final class GameViewModel: ObservableObject {
                 beginSignIn()
             case "shared.sign_out" where event.phase == "activate":
                 signOut()
+                gameExitRequestID &+= 1
             case "build.tool" where event.phase == "activate":
                 let tools = ["place", "rotate", "remove", "recolor"]
                 buildTool = tools[(tools.firstIndex(of: buildTool).map { ($0 + 1) % tools.count } ?? 0)]
