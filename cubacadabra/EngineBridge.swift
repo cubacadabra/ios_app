@@ -168,6 +168,10 @@ final class EngineBridge {
         )
     }
 
+    func setUISuppressed(_ suppressed: Bool) {
+        engine_set_ui_suppressed(handle, suppressed ? 1 : 0)
+    }
+
     func setAuthenticated(_ authenticated: Bool) {
         engine_set_authenticated(handle, authenticated ? 1 : 0)
     }

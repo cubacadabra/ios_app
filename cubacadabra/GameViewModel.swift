@@ -539,6 +539,7 @@ final class GameViewModel: ObservableObject {
         characterLabAppearanceRevision = max(engine.appearanceRevision, 1)
         engine.setRemotePlayers([])
         engine.setReducedEffects(false)
+        engine.setUISuppressed(true)
         engine.resetView()
         frame = engine.frame()
     }
@@ -549,6 +550,7 @@ final class GameViewModel: ObservableObject {
         characterLabMotion = "idle"
         characterLabJumpQueued = false
         engine?.setReducedEffects(false)
+        engine?.setUISuppressed(false)
         pauseGame()
     }
 
