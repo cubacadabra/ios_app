@@ -1,5 +1,6 @@
 xcuserdata/
 cubacadabra/Resources/game.luau
+cubacadabra/Resources/manifest.json
 cubacadabra/Resources/game-package/
 cubacadabra/Resources/assets/
 *.hmap

@@ -61,6 +61,7 @@
 				0082C6E6304765160017F149 /* Sources */,
 				0082C6E7304765160017F149 /* Frameworks */,
 				0082C6E8304765160017F149 /* Resources */,
+				0082C6FA304765170017F149 /* Sync game packages */,
 			);
 			buildRules = (
 			);
@@ -134,8 +135,6 @@
 			inputPaths = (
 				"$(SRCROOT)/../rust/Cargo.toml",
 				"$(SRCROOT)/scripts/build_rust_engine.sh",
-				"$(SRCROOT)/../tools/pyproject.toml",
-				"$(SRCROOT)/../first-game/manifest.json",
 				"$(SRCROOT)/cubacadabra/cubacadabra_engine.h",
 			);
 			name = "Build Rust engine";
@@ -145,6 +144,32 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "exec /bin/sh \"${SRCROOT}/scripts/build_rust_engine.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+		0082C6FA304765170017F149 /* Sync game packages */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/scripts/sync_game_packages.sh",
+				"$(SRCROOT)/../tools/pyproject.toml",
+				"$(SRCROOT)/../first-game/manifest.json",
+				"$(SRCROOT)/../first-game/src/main.luau",
+				"$(SRCROOT)/../second-game/manifest.json",
+				"$(SRCROOT)/../second-game/src/main.luau",
+			);
+			name = "Sync game packages";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/manifest-first-game.json",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/game-first-game.luau",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/manifest-second-game.json",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/game-second-game.luau",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "exec /bin/sh \"${SRCROOT}/scripts/sync_game_packages.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */

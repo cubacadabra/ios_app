@@ -3,10 +3,6 @@ set -eu
 
 project_dir="${PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 manifest_path="$project_dir/../rust/Cargo.toml"
-tools_dir="$project_dir/../tools"
-game_project="$project_dir/../first-game"
-game_package_build="${DERIVED_FILE_DIR:-$project_dir/rust/build}/game-package"
-game_resources_destination="$project_dir/cubacadabra/Resources"
 output_dir="${DERIVED_FILE_DIR:-$project_dir/rust/build}/cubacadabra-engine"
 cargo_target_dir="${CARGO_TARGET_DIR:-${DERIVED_FILE_DIR:-$project_dir/rust/build}/rust-target}"
 rust_profile=debug
@@ -15,20 +11,6 @@ cargo_profile_args=
 if [ "${CONFIGURATION:-Debug}" = "Release" ]; then
   rust_profile=release
   cargo_profile_args=--release
-fi
-
-if [ ! -f "$tools_dir/pyproject.toml" ] || [ ! -d "$tools_dir/src/cubacadabra" ]; then
-  echo "The shared Cubacadabra tools checkout is missing: $tools_dir" >&2
-  exit 1
-fi
-echo "Building the default game package into the iOS bundle resources."
-PYTHONPATH="$tools_dir/src${PYTHONPATH:+:$PYTHONPATH}" \
-  python3 -m cubacadabra build-game "$game_project" --output "$game_package_build"
-cp "$game_package_build/manifest.json" "$game_resources_destination/manifest.json"
-cp "$game_package_build/game.luau" "$game_resources_destination/game.luau"
-if [ -d "$game_package_build/assets" ]; then
-  mkdir -p "$game_resources_destination/assets"
-  cp -R "$game_package_build/assets/." "$game_resources_destination/assets/"
 fi
 
 if ! command -v rustc >/dev/null 2>&1 || ! command -v cargo >/dev/null 2>&1; then

@@ -243,31 +243,29 @@ enum AppLinks {
 struct GamePackageLoader {
     // The generated Luau package format changed with the Build Together UI.
     // Versioning these keys prevents an older cached script from overriding a
-    // corrected bundle on the first launch after an app update.
-    private static let cachedManifestKeyPrefix = "cubacadabra.cached-manifest.v2."
-    private static let cachedScriptKeyPrefix = "cubacadabra.cached-script.v2."
+    // corrected bundle on the first launch after an app update. Version 3
+    // also separates the new per-game bundled packages from older caches.
+    private static let cachedManifestKeyPrefix = "cubacadabra.cached-manifest.v3."
+    private static let cachedScriptKeyPrefix = "cubacadabra.cached-script.v3."
     private static let maximumManifestBytes = 512_000
     private static let maximumScriptBytes = 512_000
 
     func load(gameID: String = "first-game") async throws -> LoadedGamePackage {
         guard Self.isValidGameID(gameID) else { throw GamePackageError.invalidGameID }
 
-        if gameID == "first-game" {
-            let bundled = try loadBundledPackage()
-            if let cachedPackage = cachedPackage(for: gameID) {
-                return cachedPackage
-            }
-            return bundled
-        }
-
         if let cachedPackage = cachedPackage(for: gameID) {
             return cachedPackage
         }
+
+        if let bundledPackage = try? loadBundledPackage(for: gameID) {
+            return bundledPackage
+        }
+
         return try await fetchPackage(for: gameID)
     }
 
     /// Refreshes the validated package for the next launch. The bundled
-    /// package remains the offline fallback if the host is unavailable.
+    /// package for each game remains the offline fallback if the host is unavailable.
     func refreshPackage(gameID: String = "first-game") async {
         guard Self.isValidGameID(gameID) else { return }
         let baseURL = remoteBaseURL(for: gameID)
@@ -302,18 +300,30 @@ struct GamePackageLoader {
         return loaded
     }
 
-    private func loadBundledPackage() throws -> LoadedGamePackage {
-        guard let manifestURL = Bundle.main.url(forResource: "manifest", withExtension: "json"),
-              let scriptURL = Bundle.main.url(forResource: "game", withExtension: "luau"),
+    private func loadBundledPackage(for gameID: String) throws -> LoadedGamePackage {
+        let manifestURL = Bundle.main.url(
+            forResource: "manifest-\(gameID)",
+            withExtension: "json",
+        ) ?? (gameID == "first-game"
+            ? Bundle.main.url(forResource: "manifest", withExtension: "json")
+            : nil)
+        let scriptURL = Bundle.main.url(
+            forResource: "game-\(gameID)",
+            withExtension: "luau",
+        ) ?? (gameID == "first-game"
+            ? Bundle.main.url(forResource: "game", withExtension: "luau")
+            : nil)
+        guard let manifestURL,
+              let scriptURL,
               let manifestData = try? Data(contentsOf: manifestURL),
               let scriptData = try? Data(contentsOf: scriptURL),
               let script = String(data: scriptData, encoding: .utf8) else {
             throw GamePackageError.missingBundledPackage
         }
 #if DEBUG
-        NSLog("Cubacadabra using game.luau at %@\n%@", scriptURL.path, script)
+        NSLog("Cubacadabra using %@ package at %@", gameID, scriptURL.path)
 #endif
-        return try makePackage(manifestData: manifestData, script: script)
+        return try makePackage(manifestData: manifestData, script: script, expectedGameID: gameID)
     }
 
     private func cachedPackage(for gameID: String) -> LoadedGamePackage? {

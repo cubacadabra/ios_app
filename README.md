@@ -43,11 +43,11 @@ Game package: http://localhost:5173/games/first-game/
 Backend:      ws://localhost:8787
 ```
 
-The Xcode build phase first builds the default sibling game package through the
-shared `tools` repository, stages its runtime
-files into `cubacadabra/Resources/`, then compiles the Rust crate for the
-selected iOS target and links the resulting static library. You do not need to
-build Rust separately for the normal Xcode workflow.
+The Xcode build phases build both sibling game packages through the shared
+`tools` repository and copy their runtime files into the final app bundle as
+`manifest-<game-id>.json` and `game-<game-id>.luau`. The Rust phase then compiles
+the native engine for the selected iOS target and links the resulting static
+library. You do not need to build Rust separately for the normal Xcode workflow.
 
 ## Run on a physical device over the dev LAN
 
