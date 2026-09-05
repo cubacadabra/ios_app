@@ -80,7 +80,6 @@ final class GameViewModel: ObservableObject {
     private var lookX: Float = 0
     private var lookY: Float = 0
     private var zoomDelta: Float = 0
-    private var lastLookTranslation = CGSize.zero
     private var noticeTask: Task<Void, Never>?
     private var moderationNoticeTask: Task<Void, Never>?
     private var buildActionNoticeTask: Task<Void, Never>?
@@ -244,12 +243,11 @@ final class GameViewModel: ObservableObject {
 
     func lookChanged(to translation: CGSize) {
         guard !usernameEditorOpen else { return }
-        lookX += Float(translation.width - lastLookTranslation.width)
-        lookY += Float(translation.height - lastLookTranslation.height)
-        lastLookTranslation = translation
+        lookX += Float(translation.width)
+        lookY += Float(translation.height)
     }
 
-    func lookEnded() { lastLookTranslation = .zero }
+    func lookEnded() {}
 
     func zoomChangedBy(delta: CGFloat) {
         guard !usernameEditorOpen else { return }

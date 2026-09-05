@@ -184,6 +184,10 @@ final class InteractiveGameView: MTKView {
                 uiPointers.insert(pointerID)
             } else {
                 cameraTouches[pointerID] = point
+                if cameraTouches.count >= 2 {
+                    // A second camera finger is a gesture, never a world tap.
+                    cameraTouchMoved = true
+                }
             }
         }
         updatePinchDistance()
@@ -228,7 +232,10 @@ final class InteractiveGameView: MTKView {
         }
         if cameraTouches.isEmpty {
             onLookEnded?()
-            if phase == UInt8(CUBACADABRA_UI_POINTER_UP) && wasCameraInteraction && !cameraTouchMoved {
+            if phase == UInt8(CUBACADABRA_UI_POINTER_UP)
+                && wasCameraInteraction
+                && !cameraTouchMoved
+                && uiPointers.isEmpty {
                 onWorldTap?()
             }
             cameraTouchMoved = false
@@ -255,6 +262,7 @@ final class InteractiveGameView: MTKView {
         let distance = hypot(points[0].x - points[1].x, points[0].y - points[1].y)
         if let previousPinchDistance {
             onZoomDelta?((distance - previousPinchDistance) / 100)
+            cameraTouchMoved = true
         }
         previousPinchDistance = distance
     }
