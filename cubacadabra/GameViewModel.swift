@@ -61,6 +61,7 @@ final class GameViewModel: ObservableObject {
 
     private let loader = GamePackageLoader()
     private let authentication = AppAuthenticationService()
+    private let googleSignIn = NativeGoogleSignInService()
     private let blockedPlayerIDsKey = "cubacadabra.blocked-player-ids"
     private var engine: EngineBridge?
     private var lastTick: Date?
@@ -156,6 +157,15 @@ final class GameViewModel: ObservableObject {
         frame = nil
         hasEnteredGame = false
         Task { await load() }
+    }
+
+    func refreshAuthentication() {
+        guard engine != nil else { return }
+        Task { [weak self] in
+            guard let self,
+                  let authResult = await authentication.restore() else { return }
+            applyAuthentication(authResult)
+        }
     }
 
     func tick(at date: Date) {
@@ -302,11 +312,42 @@ final class GameViewModel: ObservableObject {
 
     func requestSettingsInteraction() {
         guard settingsRoomState == 2, !usernameEditorOpen else { return }
-        openBrowserMyCube()
+        if isAuthenticated {
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    let browserCode = try await authentication.createBrowserHandoffCode()
+                    openBrowserMyCube(browserCode: browserCode)
+                } catch {
+                    authenticationNotice = "We couldn’t prepare My Cube. Try signing in again."
+                }
+            }
+        } else {
+            beginSignIn()
+        }
     }
 
-    private func openBrowserMyCube() {
-        UIApplication.shared.open(AppLinks.myCube) { [weak self] opened in
+    private func openBrowserMyCube(browserCode: String? = nil) {
+        let url: URL
+        if let browserCode {
+            var components = URLComponents(
+                url: ClientConfiguration.backendAPIURL.appendingPathComponent("auth/browser/consume"),
+                resolvingAgainstBaseURL: false
+            )
+            components?.queryItems = [
+                URLQueryItem(name: "code", value: browserCode),
+                URLQueryItem(name: "returnTo", value: "/my-cube/"),
+            ]
+            guard let handoffURL = components?.url else {
+                authenticationNotice = "We couldn’t open My Cube. Try again."
+                return
+            }
+            url = handoffURL
+        } else {
+            url = AppLinks.myCube
+        }
+
+        UIApplication.shared.open(url) { [weak self] opened in
             guard !opened else { return }
             self?.authenticationNotice = "We couldn’t open My Cube. Try again."
         }
@@ -328,13 +369,15 @@ final class GameViewModel: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let result = try await authentication.signIn()
+                let credential = try await googleSignIn.signIn()
+                let result = try await authentication.authenticateGoogle(credential: credential)
                 applyAuthentication(result)
-                if settingsRoomState == 2 {
-                    requestUsernameEdit()
+                guard let browserCode = result.browserHandoffCode else {
+                    throw AppAuthError.invalidResponse
                 }
+                openBrowserMyCube(browserCode: browserCode)
             } catch let error as AppAuthError where error == .cancelled {
-                // The user dismissed the web sign-in sheet.
+                // The user dismissed the Google sign-in flow.
             } catch {
                 authenticationNotice = "We couldn’t sign you in. Try again."
             }

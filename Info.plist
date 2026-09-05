@@ -30,7 +30,19 @@
 				<string>cubacadabra</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.488093116930-rl9tuma8t41lgv41i8ee0uj5h3h8apai</string>
+			</array>
+		</dict>
 	</array>
+	<key>GIDClientID</key>
+	<string>488093116930-rl9tuma8t41lgv41i8ee0uj5h3h8apai.apps.googleusercontent.com</string>
+	<key>GIDServerClientID</key>
+	<string>488093116930-15iua7ac30985v925s2d66alqplk6ib6.apps.googleusercontent.com</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

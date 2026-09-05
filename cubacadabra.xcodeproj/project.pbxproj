@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		9A6F8B5A2D5C4F8E9A1B2C3D /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 9A6F8B5B2D5C4F8E9A1B2C3D /* GoogleSignIn */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		0082C6EA304765160017F149 /* cubacadabra.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = cubacadabra.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +27,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9A6F8B5A2D5C4F8E9A1B2C3D /* GoogleSignIn in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -66,6 +71,7 @@
 			);
 			name = cubacadabra;
 			packageProductDependencies = (
+				9A6F8B5B2D5C4F8E9A1B2C3D /* GoogleSignIn */,
 			);
 			productName = cubacadabra;
 			productReference = 0082C6EA304765160017F149 /* cubacadabra.app */;
@@ -95,6 +101,9 @@
 			);
 			mainGroup = 0082C6E1304765160017F149;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				9A6F8B5C2D5C4F8E9A1B2C3D /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 0082C6EB304765160017F149 /* Products */;
 			projectDirPath = "";
@@ -389,6 +398,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		9A6F8B5C2D5C4F8E9A1B2C3D /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 9.2.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		9A6F8B5B2D5C4F8E9A1B2C3D /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9A6F8B5C2D5C4F8E9A1B2C3D /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 0082C6E2304765160017F149 /* Project object */;
 }

@@ -6,6 +6,7 @@
 //
 
 import Combine
+import GoogleSignIn
 import SwiftUI
 import UIKit
 
@@ -91,6 +92,20 @@ final class AppOrientationController: ObservableObject {
 final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(
         _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        if let clientID = Bundle.main.object(forInfoDictionaryKey: "GIDClientID") as? String {
+            let serverClientID = Bundle.main.object(forInfoDictionaryKey: "GIDServerClientID") as? String
+            GIDSignIn.sharedInstance.configuration = GIDConfiguration(
+                clientID: clientID,
+                serverClientID: serverClientID
+            )
+        }
+        return true
+    }
+
+    func application(
+        _ application: UIApplication,
         configurationForConnecting connectingSceneSession: UISceneSession,
         options: UIScene.ConnectionOptions
     ) -> UISceneConfiguration {
@@ -107,7 +122,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         open url: URL,
         options: [UIApplication.OpenURLOptionsKey: Any] = [:]
     ) -> Bool {
-        forwardAuthCallback(url)
+        if GIDSignIn.sharedInstance.handle(url) {
+            return true
+        }
+        return forwardAuthCallback(url)
     }
 
     private func forwardAuthCallback(_ url: URL) -> Bool {
@@ -142,14 +160,18 @@ final class AppSceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
-        guard let callbackURL = URLContexts.first?.url,
-              callbackURL.scheme == ClientConfiguration.authCallbackURL.scheme else {
-            return
+        for context in URLContexts {
+            if GIDSignIn.sharedInstance.handle(context.url) {
+                return
+            }
+            if context.url.scheme == ClientConfiguration.authCallbackURL.scheme {
+                NotificationCenter.default.post(
+                    name: .cubacadabraAuthCallback,
+                    object: context.url
+                )
+                return
+            }
         }
-        NotificationCenter.default.post(
-            name: .cubacadabraAuthCallback,
-            object: callbackURL
-        )
     }
 
     @available(iOS 26.0, *)

@@ -25,6 +25,7 @@ struct AppAuthResult: Equatable {
     let refreshToken: String
     let accessTokenExpiresIn: Int
     let user: AppAuthUser
+    let browserHandoffCode: String?
 }
 
 enum AppAuthError: LocalizedError, Equatable {
@@ -60,12 +61,22 @@ final class AppAuthenticationService: NSObject {
         let refreshToken: String
         let expiresIn: Int
         let user: AppAuthUser
+        let browserCode: String?
 
         enum CodingKeys: String, CodingKey {
             case accessToken = "access_token"
             case refreshToken = "refresh_token"
             case expiresIn = "expires_in"
             case user
+            case browserCode = "browser_code"
+        }
+    }
+
+    private struct BrowserHandoffResponse: Decodable {
+        let browserCode: String
+
+        enum CodingKeys: String, CodingKey {
+            case browserCode = "browser_code"
         }
     }
 
@@ -132,8 +143,31 @@ final class AppAuthenticationService: NSObject {
             accessToken: tokens.accessToken,
             refreshToken: tokens.refreshToken,
             accessTokenExpiresIn: 0,
-            user: user
+            user: user,
+            browserHandoffCode: nil
         )
+    }
+
+    func authenticateGoogle(credential: String) async throws -> AppAuthResult {
+        let result = try await tokenRequest(path: "auth/app/google", body: ["credential": credential])
+        saveTokens(accessToken: result.accessToken, refreshToken: result.refreshToken)
+        return result
+    }
+
+    func createBrowserHandoffCode() async throws -> String {
+        guard let tokens = loadTokens() else { throw AppAuthError.unavailable }
+        var request = URLRequest(url: ClientConfiguration.backendAPIURL.appendingPathComponent("auth/browser/authorize"))
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(tokens.accessToken)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await send(request)
+        guard response.statusCode == 200 else {
+            throw AppAuthError.server(response.statusCode)
+        }
+        guard let decoded = try? JSONDecoder().decode(BrowserHandoffResponse.self, from: data),
+              !decoded.browserCode.isEmpty else {
+            throw AppAuthError.invalidResponse
+        }
+        return decoded.browserCode
     }
 
     private func exchange(code: String) async throws -> AppAuthResult {
@@ -171,7 +205,8 @@ final class AppAuthenticationService: NSObject {
                 accessToken: decoded.accessToken,
                 refreshToken: decoded.refreshToken,
                 accessTokenExpiresIn: decoded.expiresIn,
-                user: decoded.user
+                user: decoded.user,
+                browserHandoffCode: decoded.browserCode
             )
         } catch {
             throw AppAuthError.invalidResponse

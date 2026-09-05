@@ -3,6 +3,7 @@ import SwiftUI
 
 @MainActor
 struct ContentView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var model: GameViewModel
     @StateObject private var orientationController: AppOrientationController
     @State private var gamePresented = false
@@ -67,6 +68,10 @@ struct ContentView: View {
             } else {
                 pausedForSafety = false
             }
+        }
+        .onChange(of: scenePhase) { phase in
+            guard phase == .active else { return }
+            model.refreshAuthentication()
         }
         .onDisappear { model.disconnect() }
     }

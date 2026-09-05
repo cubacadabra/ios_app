@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>BUNDLE_ID</key>
+	<string>com.cubacadabra.app</string>
+	<key>CLIENT_ID</key>
+	<string>488093116930-rl9tuma8t41lgv41i8ee0uj5h3h8apai.apps.googleusercontent.com</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.488093116930-rl9tuma8t41lgv41i8ee0uj5h3h8apai</string>
+</dict>
+</plist>
