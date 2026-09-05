@@ -1,6 +1,6 @@
 # Cubacadabra ios app
 
-This is the Swift platform client. It loads the `first-game` package from a
+This is the Swift platform client. It loads a selected game package from a
 web host, uses the Rust static library for simulation, Luau execution, and
 Metal rendering, and connects to the backend's WebSocket world service for
 player presence and movement.
@@ -8,7 +8,7 @@ player presence and movement.
 The repositories fit together like this:
 
 ```text
-first-game  -> src/ + manifest.json (source package)
+game repos  -> src/ + manifest.json (source packages)
 rust        -> static library (simulation, scripting host, renderer)
 web         -> package host and browser client
 backend     -> multiplayer Worker and world WebSockets
@@ -43,7 +43,8 @@ Game package: http://localhost:5173/games/first-game/
 Backend:      ws://localhost:8787
 ```
 
-The Xcode build phase first builds the sibling game package, stages its runtime
+The Xcode build phase first builds the default sibling game package through the
+shared `tools` repository, stages its runtime
 files into `cubacadabra/Resources/`, then compiles the Rust crate for the
 selected iOS target and links the resulting static library. You do not need to
 build Rust separately for the normal Xcode workflow.
@@ -98,5 +99,6 @@ the Xcode build.
 ## Where to look next
 
 - [rust/README.md](../rust/README.md) — engine and native ABI
-- [first-game/README.md](../first-game/README.md) — package schema and game rules
+- [first-game/README.md](../first-game/README.md) — first-game package schema
+- [second-game/README.md](../second-game/README.md) — second-game package behavior
 - [backend/README.md](../backend/README.md) — local, LAN, and production sockets
