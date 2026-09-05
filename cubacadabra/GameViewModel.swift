@@ -36,6 +36,10 @@ final class GameViewModel: ObservableObject {
     @Published private(set) var presenceNotice: PresenceNotice?
     @Published private(set) var username = ""
     @Published private(set) var usernameStatus = "Choose a name other players can find you by."
+    @Published private(set) var isAuthenticated = false
+    @Published private(set) var authUser: AppAuthUser?
+    @Published private(set) var isSigningIn = false
+    @Published private(set) var authenticationNotice: String?
     @Published private(set) var settingsRoomState: UInt8 = 0
     @Published private(set) var usernameEditorOpen = false
     @Published private(set) var safetyRequestID = 0
@@ -56,6 +60,7 @@ final class GameViewModel: ObservableObject {
     @Published var sprinting = false
 
     private let loader = GamePackageLoader()
+    private let authentication = AppAuthenticationService()
     private let blockedPlayerIDsKey = "cubacadabra.blocked-player-ids"
     private var engine: EngineBridge?
     private var lastTick: Date?
@@ -86,6 +91,9 @@ final class GameViewModel: ObservableObject {
         },
         onEvent: { [weak self] event in
             self?.handlePresenceEvent(event)
+        },
+        onSession: { [weak self] event in
+            self?.handleSessionEvent(event)
         },
         onMove: { [weak self] event in
             self?.handleMovementEvent(event)
@@ -126,6 +134,9 @@ final class GameViewModel: ObservableObject {
             frame = initialFrame
             lastTick = nil
             isLoading = false
+            if let authResult = await authentication.restore() {
+                applyAuthentication(authResult)
+            }
             Task { [weak self] in
                 await loader.refreshPackage()
                 await self?.refreshBlockedPlayers()
@@ -289,13 +300,43 @@ final class GameViewModel: ObservableObject {
         }
     }
 
-    func requestUsernameEdit() {
+    func requestSettingsInteraction() {
+        guard settingsRoomState == 2, !usernameEditorOpen else { return }
+        guard isAuthenticated else {
+            beginSignIn()
+            return
+        }
+        requestUsernameEdit()
+    }
+
+    private func requestUsernameEdit() {
         guard settingsRoomState == 2, !usernameEditorOpen else { return }
         usernameStatus = "Choose a unique name using 2–24 characters."
         usernameEditorOpen = true
         forward = 0
         strafe = 0
         jumpQueued = false
+    }
+
+    private func beginSignIn() {
+        guard !isSigningIn else { return }
+        isSigningIn = true
+        authenticationNotice = nil
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let result = try await authentication.signIn()
+                applyAuthentication(result)
+                if settingsRoomState == 2 {
+                    requestUsernameEdit()
+                }
+            } catch let error as AppAuthError where error == .cancelled {
+                // The user dismissed the web sign-in sheet.
+            } catch {
+                authenticationNotice = "We couldn’t sign you in. Try again."
+            }
+            isSigningIn = false
+        }
     }
 
     func cancelUsernameEdit() {
@@ -417,7 +458,7 @@ final class GameViewModel: ObservableObject {
     }
 
     private var moderationService: ModerationService {
-        ModerationService(playerID: worldSocket.playerID)
+        ModerationService(playerID: worldSocket.playerID, accessToken: worldSocket.accessToken)
     }
 
     private func refreshBlockedPlayers() async {
@@ -438,6 +479,32 @@ final class GameViewModel: ObservableObject {
             remotePlayerNames[event.playerID] = event.username ?? defaultPlayerLabel(event.playerID)
         }
         showPresenceEvent(event)
+    }
+
+    private func handleSessionEvent(_ event: WorldSessionEvent) {
+        guard event.playerID == worldSocket.playerID else { return }
+        isAuthenticated = event.loggedIn
+        if !event.loggedIn {
+            authUser = nil
+        }
+        if let serverUsername = event.username,
+           event.hasUsername,
+           !serverUsername.isEmpty {
+            username = serverUsername
+            engine?.setUsername(serverUsername)
+        }
+    }
+
+    private func applyAuthentication(_ result: AppAuthResult) {
+        isAuthenticated = true
+        authUser = result.user
+        authenticationNotice = nil
+        worldSocket.setAccessToken(result.accessToken)
+        if let serverUsername = result.user.username, !serverUsername.isEmpty {
+            worldSocket.adoptUsername(serverUsername)
+            username = serverUsername
+            engine?.setUsername(serverUsername)
+        }
     }
 
     private func handleMovementEvent(_ event: WorldMovementEvent) {
@@ -492,6 +559,7 @@ final class GameViewModel: ObservableObject {
             usernameStatus = switch event.code {
             case "username_taken": "That name is already in use. Try another."
             case "username_not_allowed": "Choose a different name."
+            case "age_required": "Add your birthday in your player profile before choosing a name."
             default: "That name could not be saved. Try again."
             }
         }
@@ -671,6 +739,10 @@ final class GameViewModel: ObservableObject {
     func dismissModerationNotice() {
         moderationNoticeTask?.cancel()
         moderationNotice = nil
+    }
+
+    func dismissAuthenticationNotice() {
+        authenticationNotice = nil
     }
 
     private func defaultPlayerLabel(_ playerID: String) -> String {

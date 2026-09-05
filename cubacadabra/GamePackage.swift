@@ -168,10 +168,12 @@ enum ClientConfiguration {
 #if DEBUG
     private static let defaultBackendURL = "ws://localhost:8787"
     private static let defaultGameBaseURL = "http://localhost:5173/games/first-game/"
-    #else
+    private static let defaultLoginURL = "http://localhost:5173/login/"
+#else
     private static let defaultBackendURL = "wss://api.cubacadabra.com"
     private static let defaultGameBaseURL = "https://cubacadabra.com/games/first-game/"
-    #endif
+    private static let defaultLoginURL = "https://cubacadabra.com/login/"
+#endif
 
     static var backendURL: URL {
         configuredURL(forKey: "CUBACADABRA_BACKEND_URL", fallback: defaultBackendURL)
@@ -180,6 +182,18 @@ enum ClientConfiguration {
     static var gameBaseURL: URL {
         configuredURL(forKey: "CUBACADABRA_GAME_BASE_URL", fallback: defaultGameBaseURL)
     }
+
+    static var backendAPIURL: URL {
+        var components = URLComponents(url: backendURL, resolvingAgainstBaseURL: false)!
+        components.scheme = components.scheme == "wss" ? "https" : "http"
+        return components.url!
+    }
+
+    static var loginURL: URL {
+        URL(string: defaultLoginURL)!
+    }
+
+    static let authCallbackURL = URL(string: "cubacadabra://auth/callback")!
 
     private static func configuredURL(forKey key: String, fallback: String) -> URL {
         if let configured = ProcessInfo.processInfo.environment[key],

@@ -21,7 +21,7 @@ struct GameSurface: View {
                         onLookEnded: { model.lookEnded() },
                         onZoomDelta: { model.zoomChangedBy(delta: $0) },
                         onZoomEnded: { model.zoomEnded() },
-                        onWorldTap: { model.requestUsernameEdit() }
+                        onWorldTap: { model.requestSettingsInteraction() }
                     )
                     .ignoresSafeArea()
                 }
@@ -72,6 +72,18 @@ struct GameSurface: View {
                         .transition(.opacity)
                         .zIndex(2)
                 }
+                if model.isSigningIn {
+                    AuthenticationProgressView()
+                        .transition(.opacity)
+                        .zIndex(3)
+                }
+                if let notice = model.authenticationNotice {
+                    AuthenticationNoticeView(message: notice) {
+                        model.dismissAuthenticationNotice()
+                    }
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(4)
+                }
                 if proxy.size.height > proxy.size.width * 1.25 {
                     PortraitGameNotice()
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -83,6 +95,50 @@ struct GameSurface: View {
         .background(Color.black)
         .ignoresSafeArea()
         .animation(.easeOut(duration: 0.18), value: model.buildActionNotice)
+    }
+}
+
+private struct AuthenticationProgressView: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+                .tint(.white)
+            Text("OPENING SIGN IN")
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .tracking(1.2)
+                .foregroundStyle(.white)
+        }
+        .padding(.horizontal, 22)
+        .frame(minHeight: 78)
+        .background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.white.opacity(0.18), lineWidth: 1))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(false)
+    }
+}
+
+private struct AuthenticationNoticeView: View {
+    let message: String
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "exclamationmark.circle")
+            Text(message)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .fixedSize(horizontal: false, vertical: true)
+            Button("DISMISS", action: dismiss)
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .tracking(0.8)
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 16)
+        .frame(minHeight: 52)
+        .background(.black.opacity(0.78), in: Capsule())
+        .overlay(Capsule().stroke(.white.opacity(0.20), lineWidth: 1))
+        .padding(.horizontal, 18)
+        .padding(.top, 16)
+        .frame(maxWidth: .infinity, alignment: .top)
     }
 }
 

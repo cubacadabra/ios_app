@@ -2,6 +2,12 @@ import Foundation
 
 struct ModerationService {
     let playerID: String
+    let accessToken: String?
+
+    init(playerID: String, accessToken: String? = nil) {
+        self.playerID = playerID
+        self.accessToken = accessToken
+    }
 
     func fetchBlockedPlayerIDs() async throws -> [String] {
         let response: ModerationBlocksResponse = try await request(
@@ -55,6 +61,9 @@ struct ModerationService {
         request.httpMethod = method
         request.timeoutInterval = 8
         request.setValue(playerID, forHTTPHeaderField: "X-Cubacadabra-Player-ID")
+        if let accessToken {
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        }
         if body != nil {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONSerialization.data(withJSONObject: body as Any)

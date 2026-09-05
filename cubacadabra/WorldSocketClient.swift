@@ -29,6 +29,14 @@ struct WorldPresenceEvent {
     let username: String?
 }
 
+struct WorldSessionEvent {
+    let playerID: String
+    let username: String?
+    let hasUsername: Bool
+    let loggedIn: Bool
+    let authenticated: Bool
+}
+
 struct WorldUsernameEvent {
     let type: String
     let username: String?
@@ -76,10 +84,12 @@ final class WorldSocketClient {
 
     let playerID: String
     private(set) var username: String
+    private(set) var accessToken: String?
 
     private let baseURL = ClientConfiguration.backendURL
     private let onStateChange: (WorldConnectionState) -> Void
     private let onEvent: (WorldPresenceEvent) -> Void
+    private let onSession: (WorldSessionEvent) -> Void
     private let onMove: (WorldMovementEvent) -> Void
     private let onUsername: (WorldUsernameEvent) -> Void
     private let onExperience: (WorldExperienceEvent) -> Void
@@ -99,15 +109,18 @@ final class WorldSocketClient {
     init(
         onStateChange: @escaping (WorldConnectionState) -> Void,
         onEvent: @escaping (WorldPresenceEvent) -> Void,
+        onSession: @escaping (WorldSessionEvent) -> Void,
         onMove: @escaping (WorldMovementEvent) -> Void,
         onUsername: @escaping (WorldUsernameEvent) -> Void,
         onExperience: @escaping (WorldExperienceEvent) -> Void
     ) {
         playerID = Self.loadPlayerID()
         username = Self.loadUsername(for: playerID)
+        accessToken = nil
         pendingUsername = username
         self.onStateChange = onStateChange
         self.onEvent = onEvent
+        self.onSession = onSession
         self.onMove = onMove
         self.onUsername = onUsername
         self.onExperience = onExperience
@@ -161,7 +174,11 @@ final class WorldSocketClient {
             return
         }
 
-        let nextSocket = URLSession.shared.webSocketTask(with: url)
+        var request = URLRequest(url: url)
+        if let accessToken {
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        }
+        let nextSocket = URLSession.shared.webSocketTask(with: request)
         socketTask = nextSocket
         lastMoveSentAt = Date.distantPast.timeIntervalSinceReferenceDate
         lastSentMove = nil
@@ -207,6 +224,17 @@ final class WorldSocketClient {
         }
 
         guard let event = try? JSONDecoder().decode(WorldEventEnvelope.self, from: data) else { return }
+        if event.type == "session_identity" {
+            guard let eventPlayerID = event.id else { return }
+            onSession(WorldSessionEvent(
+                playerID: eventPlayerID,
+                username: event.username,
+                hasUsername: event.hasUsername ?? false,
+                loggedIn: event.loggedIn ?? event.authenticated ?? false,
+                authenticated: event.authenticated ?? false
+            ))
+            return
+        }
         if event.type == "username_updated" || event.type == "username_error" {
             if event.type == "username_updated", let nextUsername = event.username {
                 username = nextUsername
@@ -270,6 +298,30 @@ final class WorldSocketClient {
         }
         pendingUsername = trimmed
         sendUsername(trimmed, on: socketTask)
+    }
+
+    func setAccessToken(_ nextAccessToken: String?) {
+        guard accessToken != nextAccessToken else { return }
+        accessToken = nextAccessToken
+        guard worldID != nil else { return }
+        reconnect()
+    }
+
+    func adoptUsername(_ nextUsername: String) {
+        let trimmed = nextUsername.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        username = trimmed
+        pendingUsername = trimmed
+        UserDefaults.standard.set(trimmed, forKey: "cubacadabra.username")
+    }
+
+    func reconnect() {
+        guard worldID != nil else { return }
+        generation += 1
+        closeCurrentSocket()
+        reconnectAttempt = 0
+        stopped = false
+        openSocket(generation: generation)
     }
 
     private func sendUsername(_ value: String, on task: URLSessionWebSocketTask?) {
@@ -454,6 +506,9 @@ private struct WorldEventEnvelope: Decodable {
     let sprinting: Bool?
     let corrected: Bool?
     let username: String?
+    let hasUsername: Bool?
+    let loggedIn: Bool?
+    let authenticated: Bool?
     let code: String?
     let kind: String?
     let phase: String?
@@ -466,7 +521,7 @@ private struct WorldEventEnvelope: Decodable {
     let launch: WorldLaunchEnvelope?
 
     enum CodingKeys: String, CodingKey {
-        case type, id, x, y, z, yaw, moving, sprinting, corrected, username, code, kind, phase, prompt
+        case type, id, x, y, z, yaw, moving, sprinting, corrected, username, hasUsername, loggedIn, authenticated, code, kind, phase, prompt
         case sessionWorldID = "sessionWorldId"
         case playerIDs = "playerIds"
         case startsAt, serverNow, blocks, launch
