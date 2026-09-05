@@ -8,13 +8,14 @@ struct HomeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var appeared = false
 
     private let coral = Color(red: 0.91, green: 0.39, blue: 0.29)
     private let ink = Color(red: 0.15, green: 0.29, blue: 0.29)
 
     private var isWideLayout: Bool {
-        horizontalSizeClass == .regular
+        horizontalSizeClass == .regular || verticalSizeClass == .compact
     }
 
     var body: some View {

@@ -39,6 +39,8 @@ final class AppOrientationController: ObservableObject {
             shouldLockLandscape = interfaceOrientationIsLandscape
             updateOrientationPreferences()
             requestLandscape()
+        } else {
+            requestPortrait()
         }
     }
 
@@ -48,6 +50,8 @@ final class AppOrientationController: ObservableObject {
         updateOrientationPreferences()
         if isActive {
             requestLandscape()
+        } else {
+            requestPortrait()
         }
     }
 
@@ -67,6 +71,17 @@ final class AppOrientationController: ObservableObject {
         ) { error in
             #if DEBUG
             print("Couldn't switch Cubacadabra to landscape:", error.localizedDescription)
+            #endif
+        }
+    }
+
+    private func requestPortrait() {
+        guard let windowScene else { return }
+        windowScene.requestGeometryUpdate(
+            .iOS(interfaceOrientations: .portrait)
+        ) { error in
+            #if DEBUG
+            print("Couldn't switch Cubacadabra to portrait:", error.localizedDescription)
             #endif
         }
     }

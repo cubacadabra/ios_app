@@ -89,8 +89,8 @@ struct GameSurface: View {
                 if proxy.size.height > proxy.size.width * 1.25 {
                     PortraitGameNotice()
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                        .padding(.top, 18)
-                        .allowsHitTesting(false)
+                        .ignoresSafeArea()
+                        .transition(.opacity)
                 }
             }
         }
@@ -146,14 +146,27 @@ private struct AuthenticationNoticeView: View {
 
 private struct PortraitGameNotice: View {
     var body: some View {
-        Label("LANDSCAPE VIEW", systemImage: "rectangle.landscape.rotate")
-            .font(.system(size: 11, weight: .bold, design: .rounded))
-            .tracking(1.1)
-            .foregroundStyle(.white.opacity(0.86))
-            .padding(.horizontal, 14)
-            .frame(minHeight: 36)
-            .background(.black.opacity(0.54), in: Capsule())
-            .overlay(Capsule().stroke(.white.opacity(0.18), lineWidth: 1))
+        ZStack {
+            Color.black.opacity(0.82)
+
+            VStack(spacing: 14) {
+                Image(systemName: "rectangle.landscape.rotate")
+                    .font(.system(size: 28, weight: .medium))
+                    .foregroundStyle(.white)
+                Text("TURN SIDEWAYS TO PLAY")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .tracking(1.2)
+                    .foregroundStyle(.white)
+                Text("The game is built for a wider view.")
+                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.68))
+            }
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 28)
+        }
+        .allowsHitTesting(true)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Turn your device sideways to play")
     }
 }
 
