@@ -257,6 +257,7 @@ struct MainMenuView: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var gameError: String?
     @State private var showingLogoutConfirmation = false
+    @State private var characterLabPresented = false
 
     var body: some View {
         ScrollView {
@@ -299,6 +300,22 @@ struct MainMenuView: View {
                         .foregroundStyle(.red)
                         .padding(.top, 12)
                 }
+
+                menuSectionTitle("CREATE")
+                    .padding(.top, 36)
+
+                Button {
+                    characterLabPresented = true
+                } label: {
+                    menuRow(
+                        icon: "wand.and.stars",
+                        title: "Character lab",
+                        detail: "Try bodies, expressions, and outfits"
+                    )
+                }
+                .buttonStyle(.plain)
+                .background(.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .accessibilityHint("Opens a live preview of the character styles")
 
                 menuSectionTitle("ACCOUNT")
                     .padding(.top, 36)
@@ -361,6 +378,9 @@ struct MainMenuView: View {
         }
         .background(Color(.systemBackground).ignoresSafeArea())
         .navigationBarBackButtonHidden(true)
+        .sheet(isPresented: $characterLabPresented) {
+            CharacterLabView(model: model)
+        }
     }
 
     private func cubeRow(_ game: GameCatalogEntry) -> some View {

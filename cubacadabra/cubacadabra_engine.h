@@ -29,6 +29,8 @@ void engine_set_input(
     float look_y,
     float zoom_delta
 );
+void engine_set_reduced_effects(CubacadabraEngine *engine, uint8_t reduced);
+void engine_trigger_local_wave(CubacadabraEngine *engine);
 void engine_set_ui_viewport(
     CubacadabraEngine *engine,
     float width,

@@ -103,6 +103,26 @@ final class EngineBridge {
         }
     }
 
+    func resetView() {
+        engine_reset_view(handle)
+    }
+
+    func setReducedEffects(_ reduced: Bool) {
+        engine_set_reduced_effects(handle, reduced ? 1 : 0)
+    }
+
+    func triggerLocalWave() {
+        engine_trigger_local_wave(handle)
+    }
+
+    var appearanceRevision: UInt32 {
+        engine_appearance_revision(handle)
+    }
+
+    var appearanceStatus: UInt8 {
+        engine_appearance_status(handle)
+    }
+
     @discardableResult
     func applyRemoteUpdate(_ data: Data) -> UInt8 {
         data.withUnsafeBytes { rawBuffer in
