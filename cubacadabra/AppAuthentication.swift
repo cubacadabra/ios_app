@@ -1,7 +1,10 @@
-import AuthenticationServices
 import Foundation
 import Security
 import UIKit
+
+extension Notification.Name {
+    static let cubacadabraAuthCallback = Notification.Name("cubacadabra.auth.callback")
+}
 
 struct AppAuthUser: Codable, Equatable {
     let id: String
@@ -46,7 +49,7 @@ enum AppAuthError: LocalizedError, Equatable {
 }
 
 @MainActor
-final class AppAuthenticationService: NSObject, ASWebAuthenticationPresentationContextProviding {
+final class AppAuthenticationService: NSObject {
     private struct StoredTokens: Codable {
         let accessToken: String
         let refreshToken: String
@@ -67,7 +70,6 @@ final class AppAuthenticationService: NSObject, ASWebAuthenticationPresentationC
     }
 
     private let keychainService = "com.cubacadabra.app.auth"
-    private var webAuthenticationSession: ASWebAuthenticationSession?
 
     func restore() async -> AppAuthResult? {
         guard let storedTokens = loadTokens() else { return nil }
@@ -92,7 +94,7 @@ final class AppAuthenticationService: NSObject, ASWebAuthenticationPresentationC
         ]
         guard let loginURL = components?.url else { throw AppAuthError.unavailable }
 
-        let callbackURL = try await startWebAuthentication(url: loginURL)
+        let callbackURL = try await startBrowserAuthentication(url: loginURL)
         let callbackComponents = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)
         guard callbackURL.scheme == ClientConfiguration.authCallbackURL.scheme,
               callbackURL.host == ClientConfiguration.authCallbackURL.host,
@@ -115,15 +117,6 @@ final class AppAuthenticationService: NSObject, ASWebAuthenticationPresentationC
             kSecAttrAccount as String: "tokens",
         ]
         SecItemDelete(query as CFDictionary)
-    }
-
-    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        let activeScene = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first { $0.activationState == .foregroundActive }
-        return activeScene?.windows.first(where: \.isKeyWindow)
-            ?? activeScene?.windows.first
-            ?? UIWindow(frame: .zero)
     }
 
     private func authenticatedResult(using tokens: StoredTokens) async throws -> AppAuthResult {
@@ -210,31 +203,27 @@ final class AppAuthenticationService: NSObject, ASWebAuthenticationPresentationC
         }
     }
 
-    private func startWebAuthentication(url: URL) async throws -> URL {
+    private func startBrowserAuthentication(url: URL) async throws -> URL {
         try await withCheckedThrowingContinuation { continuation in
-            let session = ASWebAuthenticationSession(
-                url: url,
-                callbackURLScheme: ClientConfiguration.authCallbackURL.scheme
-            ) { [weak self] callbackURL, error in
-                Task { @MainActor in
-                    self?.webAuthenticationSession = nil
-                    if let callbackURL {
-                        continuation.resume(returning: callbackURL)
-                    } else if let authenticationError = error as? ASWebAuthenticationSessionError,
-                              authenticationError.code == .canceledLogin {
-                        continuation.resume(throwing: AppAuthError.cancelled)
-                    } else {
-                        continuation.resume(throwing: AppAuthError.invalidCallback)
-                    }
+            var observer: NSObjectProtocol?
+            observer = NotificationCenter.default.addObserver(
+                forName: .cubacadabraAuthCallback,
+                object: nil,
+                queue: .main
+            ) { notification in
+                guard let callbackURL = notification.object as? URL else { return }
+                if let observer {
+                    NotificationCenter.default.removeObserver(observer)
                 }
+                continuation.resume(returning: callbackURL)
             }
-            session.presentationContextProvider = self
-            session.prefersEphemeralWebBrowserSession = false
-            webAuthenticationSession = session
-            guard session.start() else {
-                webAuthenticationSession = nil
+
+            UIApplication.shared.open(url, options: [:]) { opened in
+                guard !opened else { return }
+                if let observer {
+                    NotificationCenter.default.removeObserver(observer)
+                }
                 continuation.resume(throwing: AppAuthError.unavailable)
-                return
             }
         }
     }

@@ -127,6 +127,17 @@ final class AppSceneDelegate: UIResponder, UIWindowSceneDelegate {
         window.makeKeyAndVisible()
     }
 
+    func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+        guard let callbackURL = URLContexts.first?.url,
+              callbackURL.scheme == ClientConfiguration.authCallbackURL.scheme else {
+            return
+        }
+        NotificationCenter.default.post(
+            name: .cubacadabraAuthCallback,
+            object: callbackURL
+        )
+    }
+
     @available(iOS 26.0, *)
     func windowScene(
         _ windowScene: UIWindowScene,
