@@ -13,6 +13,7 @@ struct ContentView: View {
     @State private var path: [AppRoute] = []
     @State private var didAutoEnterGame = false
     @State private var safetyCenterPresented = false
+    @State private var myCubePresented = false
     @State private var pausedForSafety = false
     private let tick = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
 
@@ -39,6 +40,7 @@ struct ContentView: View {
                     HomeView(
                         model: model,
                         safetyCenterPresented: $safetyCenterPresented,
+                        openMyCube: model.requestMyCube,
                         enterGame: enterGame,
                         leaveGame: { model.leaveGame() }
                     )
@@ -76,6 +78,10 @@ struct ContentView: View {
         .onChange(of: model.isLoading) { _ in
             autoEnterGameIfReady()
         }
+        .onChange(of: model.myCubeRequestID) { _ in
+            path.removeAll()
+            myCubePresented = true
+        }
         .onChange(of: path) { newPath in
             let isPresented = newPath.contains(.game)
             orientationController.setGameActive(isPresented)
@@ -94,6 +100,9 @@ struct ContentView: View {
             model.refreshAuthentication()
         }
         .onDisappear { model.disconnect() }
+        .sheet(isPresented: $myCubePresented) {
+            MyCubeView(model: model)
+        }
     }
 
     private var gameIsPresented: Bool {

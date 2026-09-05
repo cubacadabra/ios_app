@@ -25,7 +25,11 @@ struct AppAuthResult: Equatable {
     let refreshToken: String
     let accessTokenExpiresIn: Int
     let user: AppAuthUser
-    let browserHandoffCode: String?
+}
+
+struct AppProfileUpdateResult: Equatable {
+    let user: AppAuthUser
+    let age: Int?
 }
 
 enum AppAuthError: LocalizedError, Equatable {
@@ -49,6 +53,25 @@ enum AppAuthError: LocalizedError, Equatable {
     }
 }
 
+enum AppProfileError: LocalizedError, Equatable {
+    case unauthorized
+    case server(code: String?, status: Int)
+
+    var errorCode: String? {
+        guard case let .server(code, _) = self else { return nil }
+        return code
+    }
+
+    var errorDescription: String? {
+        switch self {
+        case .unauthorized:
+            return "Your sign-in has expired. Please sign in again."
+        case .server:
+            return "The player profile could not be updated."
+        }
+    }
+}
+
 @MainActor
 final class AppAuthenticationService: NSObject {
     private struct StoredTokens: Codable {
@@ -61,22 +84,12 @@ final class AppAuthenticationService: NSObject {
         let refreshToken: String
         let expiresIn: Int
         let user: AppAuthUser
-        let browserCode: String?
 
         enum CodingKeys: String, CodingKey {
             case accessToken = "access_token"
             case refreshToken = "refresh_token"
             case expiresIn = "expires_in"
             case user
-            case browserCode = "browser_code"
-        }
-    }
-
-    private struct BrowserHandoffResponse: Decodable {
-        let browserCode: String
-
-        enum CodingKeys: String, CodingKey {
-            case browserCode = "browser_code"
         }
     }
 
@@ -143,8 +156,7 @@ final class AppAuthenticationService: NSObject {
             accessToken: tokens.accessToken,
             refreshToken: tokens.refreshToken,
             accessTokenExpiresIn: 0,
-            user: user,
-            browserHandoffCode: nil
+            user: user
         )
     }
 
@@ -154,20 +166,12 @@ final class AppAuthenticationService: NSObject {
         return result
     }
 
-    func createBrowserHandoffCode() async throws -> String {
-        guard let tokens = loadTokens() else { throw AppAuthError.unavailable }
-        var request = URLRequest(url: ClientConfiguration.backendAPIURL.appendingPathComponent("auth/browser/authorize"))
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(tokens.accessToken)", forHTTPHeaderField: "Authorization")
-        let (data, response) = try await send(request)
-        guard response.statusCode == 200 else {
-            throw AppAuthError.server(response.statusCode)
-        }
-        guard let decoded = try? JSONDecoder().decode(BrowserHandoffResponse.self, from: data),
-              !decoded.browserCode.isEmpty else {
-            throw AppAuthError.invalidResponse
-        }
-        return decoded.browserCode
+    func saveBirthday(_ dob: String) async throws -> AppProfileUpdateResult {
+        try await updateProfile(path: "auth/birthday", body: ["dob": dob])
+    }
+
+    func saveUsername(_ username: String) async throws -> AppProfileUpdateResult {
+        try await updateProfile(path: "auth/username", body: ["username": username])
     }
 
     private func exchange(code: String) async throws -> AppAuthResult {
@@ -205,11 +209,45 @@ final class AppAuthenticationService: NSObject {
                 accessToken: decoded.accessToken,
                 refreshToken: decoded.refreshToken,
                 accessTokenExpiresIn: decoded.expiresIn,
-                user: decoded.user,
-                browserHandoffCode: decoded.browserCode
+                user: decoded.user
             )
         } catch {
             throw AppAuthError.invalidResponse
+        }
+    }
+
+    private func updateProfile(path: String, body: [String: String]) async throws -> AppProfileUpdateResult {
+        guard let tokens = loadTokens() else { throw AppProfileError.unauthorized }
+
+        var request = URLRequest(url: ClientConfiguration.backendAPIURL.appendingPathComponent(path))
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(tokens.accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await send(request)
+        guard (200..<300).contains(response.statusCode) else {
+            let code = (try? JSONDecoder().decode(ProfileErrorResponse.self, from: data))?.error
+            throw AppProfileError.server(code: code, status: response.statusCode)
+        }
+
+        do {
+            return try JSONDecoder().decode(ProfileUpdateResponse.self, from: data).result
+        } catch {
+            throw AppAuthError.invalidResponse
+        }
+    }
+
+    private struct ProfileErrorResponse: Decodable {
+        let error: String?
+    }
+
+    private struct ProfileUpdateResponse: Decodable {
+        let user: AppAuthUser
+        let age: Int?
+
+        var result: AppProfileUpdateResult {
+            AppProfileUpdateResult(user: user, age: age)
         }
     }
 

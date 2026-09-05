@@ -209,12 +209,10 @@ enum ClientConfiguration {
 enum AppLinks {
 #if DEBUG
     static let about = URL(string: "http://localhost:5173/about/")!
-    static let myCube = URL(string: "http://localhost:5173/my-cube/")!
     static let privacy = URL(string: "http://localhost:5173/privacy/")!
     static let terms = URL(string: "http://localhost:5173/terms/")!
 #else
     static let about = URL(string: "https://cubacadabra.com/about/")!
-    static let myCube = URL(string: "https://cubacadabra.com/my-cube/")!
     static let privacy = URL(string: "https://cubacadabra.com/privacy/")!
     static let terms = URL(string: "https://cubacadabra.com/terms/")!
 #endif

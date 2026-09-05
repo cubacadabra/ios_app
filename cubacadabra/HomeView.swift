@@ -2,6 +2,7 @@ import SwiftUI
 struct HomeView: View {
     @ObservedObject var model: GameViewModel
     @Binding var safetyCenterPresented: Bool
+    let openMyCube: () -> Void
     let enterGame: () -> Void
     let leaveGame: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -35,6 +36,14 @@ struct HomeView: View {
                             .tracking(2.1)
                             .foregroundStyle(.primary)
                         Spacer(minLength: 16)
+                        Button(action: openMyCube) {
+                            Image(systemName: "person.crop.circle")
+                                .font(.system(size: 16, weight: .semibold))
+                                .frame(width: 44, height: 44)
+                                .background(.secondary.opacity(0.12), in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("My Cube")
                         Button {
                             safetyCenterPresented = true
                         } label: {
@@ -244,4 +253,3 @@ private struct HomePrimaryButtonStyle: ButtonStyle {
             .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
     }
 }
-

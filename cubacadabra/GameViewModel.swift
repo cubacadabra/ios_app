@@ -40,6 +40,7 @@ final class GameViewModel: ObservableObject {
     @Published private(set) var authUser: AppAuthUser?
     @Published private(set) var isSigningIn = false
     @Published private(set) var authenticationNotice: String?
+    @Published private(set) var myCubeRequestID = 0
     @Published private(set) var settingsRoomState: UInt8 = 0
     @Published private(set) var usernameEditorOpen = false
     @Published private(set) var safetyRequestID = 0
@@ -286,7 +287,7 @@ final class GameViewModel: ObservableObject {
             case "shared.about.open" where event.phase == "activate":
                 UIApplication.shared.open(AppLinks.about)
             case "shared.sign_in" where event.phase == "activate":
-                beginSignIn()
+                requestMyCube()
             case "shared.leave_game" where event.phase == "activate":
                 gameExitRequestID &+= 1
             case "build.tool" where event.phase == "activate":
@@ -320,44 +321,15 @@ final class GameViewModel: ObservableObject {
 
     func requestSettingsInteraction() {
         guard settingsRoomState == 2, !usernameEditorOpen else { return }
-        if isAuthenticated {
-            Task { [weak self] in
-                guard let self else { return }
-                do {
-                    let browserCode = try await authentication.createBrowserHandoffCode()
-                    openBrowserMyCube(browserCode: browserCode)
-                } catch {
-                    authenticationNotice = "We couldn’t prepare My Cube. Try signing in again."
-                }
-            }
-        } else {
-            beginSignIn(thenOpenBrowserMyCube: true)
-        }
+        requestMyCube()
     }
 
-    private func openBrowserMyCube(browserCode: String? = nil) {
-        let url: URL
-        if let browserCode {
-            var components = URLComponents(
-                url: ClientConfiguration.backendAPIURL.appendingPathComponent("auth/browser/consume"),
-                resolvingAgainstBaseURL: false
-            )
-            components?.queryItems = [
-                URLQueryItem(name: "code", value: browserCode),
-                URLQueryItem(name: "returnTo", value: "/my-cube/"),
-            ]
-            guard let handoffURL = components?.url else {
-                authenticationNotice = "We couldn’t open My Cube. Try again."
-                return
-            }
-            url = handoffURL
+    func requestMyCube() {
+        guard !isSigningIn else { return }
+        if isAuthenticated {
+            myCubeRequestID &+= 1
         } else {
-            url = AppLinks.myCube
-        }
-
-        UIApplication.shared.open(url) { [weak self] opened in
-            guard !opened else { return }
-            self?.authenticationNotice = "We couldn’t open My Cube. Try again."
+            beginSignIn(presentMyCube: true)
         }
     }
 
@@ -370,7 +342,7 @@ final class GameViewModel: ObservableObject {
         jumpQueued = false
     }
 
-    private func beginSignIn(thenOpenBrowserMyCube: Bool = false) {
+    private func beginSignIn(presentMyCube: Bool = false) {
         guard !isSigningIn else { return }
         isSigningIn = true
         authenticationNotice = nil
@@ -380,8 +352,8 @@ final class GameViewModel: ObservableObject {
                 let credential = try await googleSignIn.signIn()
                 let result = try await authentication.authenticateGoogle(credential: credential)
                 applyAuthentication(result)
-                if thenOpenBrowserMyCube, let browserCode = result.browserHandoffCode {
-                    openBrowserMyCube(browserCode: browserCode)
+                if presentMyCube {
+                    myCubeRequestID &+= 1
                 }
             } catch let error as AppAuthError where error == .cancelled {
                 // The user dismissed the Google sign-in flow.
@@ -408,6 +380,26 @@ final class GameViewModel: ObservableObject {
         }
         usernameStatus = "Checking that name…"
         worldSocket.setUsername(trimmed)
+    }
+
+    func saveBirthday(_ dob: String) async throws -> AppProfileUpdateResult {
+        let result = try await authentication.saveBirthday(dob)
+        authUser = result.user
+        return result
+    }
+
+    func saveProfileUsername(_ value: String) async throws -> AppProfileUpdateResult {
+        let result = try await authentication.saveUsername(value)
+        applyProfileUpdate(result)
+        return result
+    }
+
+    private func applyProfileUpdate(_ result: AppProfileUpdateResult) {
+        authUser = result.user
+        guard let nextUsername = result.user.username, !nextUsername.isEmpty else { return }
+        username = nextUsername
+        worldSocket.adoptUsername(nextUsername)
+        engine?.setUsername(nextUsername)
     }
 
     func disconnect() {
