@@ -3,6 +3,7 @@ import SwiftUI
 
 struct MyCubeView: View {
     @ObservedObject var model: GameViewModel
+    let enterGame: (GameCatalogEntry) -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @State private var step: MyCubeStep
@@ -13,6 +14,8 @@ struct MyCubeView: View {
     @State private var statusMessage: String?
     @State private var statusIsError = false
     @State private var isSaving = false
+    @State private var selectingGameID: String?
+    @State private var gameSelectionError: String?
     @FocusState private var focusedField: Field?
 
     private let coral = Color(red: 0.91, green: 0.39, blue: 0.29)
@@ -22,11 +25,13 @@ struct MyCubeView: View {
         case birthday
         case parentEmail
         case basics
+        case cubes
 
         var title: String {
             switch self {
             case .birthday, .parentEmail: "Birthday"
             case .basics: "Basics"
+            case .cubes: "Cubes"
             }
         }
     }
@@ -36,8 +41,9 @@ struct MyCubeView: View {
         case username
     }
 
-    init(model: GameViewModel) {
+    init(model: GameViewModel, enterGame: @escaping (GameCatalogEntry) -> Void) {
         self.model = model
+        self.enterGame = enterGame
         let initialStep: MyCubeStep
         if let dob = model.authUser?.dateOfBirth,
            let age = Self.calculateAge(from: dob) {
@@ -66,6 +72,8 @@ struct MyCubeView: View {
                             parentEmailContent
                         case .basics:
                             basicsContent
+                        case .cubes:
+                            cubesContent
                         }
                     }
                     .id(step)
@@ -96,17 +104,29 @@ struct MyCubeView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("YOUR PLAYER PROFILE")
+            Text(headerEyebrow)
                 .font(.system(size: 11, weight: .bold, design: .rounded))
                 .tracking(1.6)
                 .foregroundStyle(.secondary)
-            Text(step == .basics ? "The basics" : "One important detail")
+            Text(headerTitle)
                 .font(.system(size: 34, weight: .bold, design: .rounded))
                 .foregroundStyle(colorScheme == .dark ? .primary : ink)
             Text(headerCopy)
                 .font(.system(size: 16, weight: .medium, design: .rounded))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var headerEyebrow: String {
+        step == .cubes ? "YOUR GAME LIBRARY" : "YOUR PLAYER PROFILE"
+    }
+
+    private var headerTitle: String {
+        switch step {
+        case .birthday, .parentEmail: "One important detail"
+        case .basics: "The basics"
+        case .cubes: "Choose a game"
         }
     }
 
@@ -118,6 +138,8 @@ struct MyCubeView: View {
             "Because you’re under 13, we need a parent or guardian before you can continue."
         case .basics:
             "Choose the name other players will see when you explore."
+        case .cubes:
+            "Pick a cube to open its lobby and start exploring."
         }
     }
 
@@ -138,15 +160,34 @@ struct MyCubeView: View {
                 } label: {
                     Label("Basics", systemImage: "person.crop.circle")
                 }
+                Button {
+                    step = .cubes
+                    clearStatus()
+                } label: {
+                    Label("Cubes", systemImage: "square.grid.2x2")
+                }
+            case .cubes:
+                Button {
+                    step = .basics
+                    clearStatus()
+                } label: {
+                    Label("Basics", systemImage: "person.crop.circle")
+                }
+                Button {
+                    step = .cubes
+                    clearStatus()
+                } label: {
+                    Label("Cubes", systemImage: "square.grid.2x2")
+                }
             }
         } label: {
             HStack(spacing: 10) {
-                Image(systemName: step == .basics ? "person.crop.circle" : "calendar")
+                Image(systemName: sectionIcon)
                     .font(.system(size: 16, weight: .semibold))
                 Text(step.title)
                     .font(.system(size: 14, weight: .bold, design: .rounded))
                 Spacer()
-                if step != .basics {
+                if step == .birthday || step == .parentEmail {
                     Text("Required to continue")
                         .font(.system(size: 12, weight: .medium, design: .rounded))
                         .foregroundStyle(.secondary)
@@ -160,7 +201,15 @@ struct MyCubeView: View {
             .contentShape(Rectangle())
         }
         .accessibilityLabel("My Cube section, \(step.title)")
-        .disabled(step != .basics && step != .birthday)
+        .disabled(step == .parentEmail)
+    }
+
+    private var sectionIcon: String {
+        switch step {
+        case .birthday, .parentEmail: "calendar"
+        case .basics: "person.crop.circle"
+        case .cubes: "square.grid.2x2"
+        }
     }
 
     private var birthdayContent: some View {
@@ -278,6 +327,111 @@ struct MyCubeView: View {
         .onAppear {
             username = model.authUser?.username ?? model.username
             focusedField = .username
+        }
+    }
+
+    private var cubesContent: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("AVAILABLE CUBES")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .tracking(1.4)
+                    .foregroundStyle(.secondary)
+                Text("Enter a world")
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                Text("Each cube has its own lobby, people, and place to explore.")
+                    .font(.system(size: 15, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            VStack(spacing: 0) {
+                ForEach(Array(GameCatalogEntry.available.enumerated()), id: \.element.id) { index, game in
+                    gameRow(game)
+                    if index < GameCatalogEntry.available.count - 1 {
+                        Divider()
+                            .padding(.leading, 70)
+                    }
+                }
+            }
+            .background(.secondary.opacity(colorScheme == .dark ? 0.10 : 0.07), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(.primary.opacity(colorScheme == .dark ? 0.16 : 0.09), lineWidth: 1)
+            }
+
+            if let gameSelectionError {
+                Label(gameSelectionError, systemImage: "exclamationmark.circle")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func gameRow(_ game: GameCatalogEntry) -> some View {
+        Button {
+            openGame(game)
+        } label: {
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .fill(game.id == "second-game" ? Color.indigo.opacity(0.78) : coral.opacity(0.86))
+                    Image(systemName: game.id == "second-game" ? "dot.radiowaves.left.and.right" : "cube.transparent")
+                        .font(.system(size: 21, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 48, height: 48)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(game.id)
+                        .font(.system(size: 16, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.primary)
+                    Text("\(game.title) · \(game.subtitle)")
+                        .font(.system(size: 13, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 8)
+
+                if selectingGameID == game.id {
+                    ProgressView()
+                        .tint(coral)
+                        .accessibilityLabel("Opening \(game.id)")
+                } else if model.selectedGameID == game.id {
+                    Text("CURRENT")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .tracking(0.8)
+                        .foregroundStyle(coral)
+                } else {
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(minHeight: 80)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(selectingGameID != nil)
+        .accessibilityLabel("Enter \(game.id), \(game.subtitle)")
+    }
+
+    private func openGame(_ game: GameCatalogEntry) {
+        guard selectingGameID == nil else { return }
+        gameSelectionError = nil
+        selectingGameID = game.id
+        Task {
+            do {
+                try await model.selectGame(game)
+                dismiss()
+                enterGame(game)
+            } catch {
+                selectingGameID = nil
+                gameSelectionError = Self.gameSelectionErrorMessage(for: error)
+            }
         }
     }
 
@@ -453,5 +607,13 @@ struct MyCubeView: View {
         default:
             return "We couldn’t save your username. Please try again."
         }
+    }
+
+    private static func gameSelectionErrorMessage(for error: Error) -> String {
+        if let packageError = error as? GamePackageError,
+           case .httpFailure = packageError {
+            return "That cube is unavailable right now. Check your connection and try again."
+        }
+        return "We couldn’t open that cube. Please try again."
     }
 }

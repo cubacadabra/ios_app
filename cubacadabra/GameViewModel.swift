@@ -59,7 +59,13 @@ final class GameViewModel: ObservableObject {
     @Published var buildColor = "coral"
     @Published private(set) var buildActionNotice: String?
     @Published private(set) var hasEnteredGame = false
+    @Published private(set) var selectedGameID = "first-game"
+    @Published private(set) var isSelectingGame = false
     @Published var sprinting = false
+
+    var selectedGame: GameCatalogEntry {
+        GameCatalogEntry.available.first { $0.id == selectedGameID } ?? GameCatalogEntry.available[0]
+    }
 
     private let loader = GamePackageLoader()
     private let authentication = AppAuthenticationService()
@@ -117,17 +123,15 @@ final class GameViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
         do {
-            let loaded = try await loader.load()
+            let loaded = try await loader.load(gameID: "first-game")
             let loadedPackage = loaded.package
             guard loadedPackage.worldDefinition(named: loadedPackage.startWorld) != nil else {
                 throw GamePackageError.missingWorld(loadedPackage.startWorld)
             }
-            let loadedEngine = try EngineBridge()
-            try loadedEngine.loadPackage(loaded.manifest)
-            try loadedEngine.loadScript(loaded.script)
-            gameLog.info("Rust package and script loaded; UI nodes: \(loadedEngine.uiNodeCount, privacy: .public)")
+            let loadedEngine = try makeEngine(from: loaded)
             runtimeWorldIDs = loadedPackage.runtimeWorldEntries().map(\.id)
             package = loadedPackage
+            selectedGameID = "first-game"
             username = worldSocket.username
             loadedEngine.setUsername(username)
             worldID = loadedPackage.startWorld
@@ -141,7 +145,7 @@ final class GameViewModel: ObservableObject {
                 applyAuthentication(authResult)
             }
             Task { [weak self] in
-                await loader.refreshPackage()
+                await loader.refreshPackage(gameID: "first-game")
                 await self?.refreshBlockedPlayers()
             }
         } catch {
@@ -330,6 +334,39 @@ final class GameViewModel: ObservableObject {
             myCubeRequestID &+= 1
         } else {
             beginSignIn(presentMyCube: true)
+        }
+    }
+
+    func selectGame(_ game: GameCatalogEntry) async throws {
+        guard GameCatalogEntry.available.contains(game) else { throw GamePackageError.invalidGameID }
+        guard selectedGameID != game.id || package == nil else { return }
+
+        isSelectingGame = true
+        defer { isSelectingGame = false }
+
+        let loaded = try await loader.load(gameID: game.id)
+        let nextEngine = try makeEngine(from: loaded)
+        let nextPackage = loaded.package
+
+        worldSocket.disconnect()
+        connectedWorldID = nil
+        pendingSessionWorldID = nil
+        remotePlayers.removeAll()
+        remotePlayerNames.removeAll()
+        engine = nextEngine
+        package = nextPackage
+        selectedGameID = game.id
+        runtimeWorldIDs = nextPackage.runtimeWorldEntries().map(\.id)
+        worldID = nextPackage.startWorld
+        frame = nextEngine.frame()
+        buildPhase = "build"
+        buildPrompt = ""
+        buildBlockCount = 0
+        buildBlocks = []
+        nextEngine.setBuildBlocks([])
+        worldSocket.setHidden(worldID == "settings")
+        if hasEnteredGame {
+            connectWorld(worldID)
         }
     }
 
@@ -552,6 +589,20 @@ final class GameViewModel: ObservableObject {
             username = serverUsername
             engine?.setUsername(serverUsername)
         }
+    }
+
+    private func makeEngine(from loaded: LoadedGamePackage) throws -> EngineBridge {
+        let loadedEngine = try EngineBridge()
+        do {
+            try loadedEngine.loadPackage(loaded.manifest)
+            try loadedEngine.loadScript(loaded.script)
+        } catch {
+            throw error
+        }
+        loadedEngine.setAuthenticated(isAuthenticated)
+        loadedEngine.setUsername(username)
+        gameLog.info("Rust package and script loaded; UI nodes: \(loadedEngine.uiNodeCount, privacy: .public)")
+        return loadedEngine
     }
 
     private func clearAuthentication() {

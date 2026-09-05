@@ -101,7 +101,9 @@ struct ContentView: View {
         }
         .onDisappear { model.disconnect() }
         .sheet(isPresented: $myCubePresented) {
-            MyCubeView(model: model)
+            MyCubeView(model: model) { _ in
+                enterGame()
+            }
         }
     }
 

@@ -110,7 +110,7 @@ struct HomeView: View {
                 .font(.system(size: 12, weight: .bold, design: .rounded))
                 .tracking(1.8)
                 .foregroundStyle(.secondary)
-            Text("First Game")
+            Text(model.selectedGame.title)
                 .font(.system(size: isWideLayout ? 50 : 44, weight: .bold, design: .rounded))
                 .foregroundStyle(colorScheme == .dark ? Color.primary : ink)
                 .lineLimit(2)
