@@ -259,9 +259,7 @@ final class GameViewModel: ObservableObject {
             case "hud.safety" where event.phase == "activate":
                 safetyRequestID &+= 1
             case "shared.about.open" where event.phase == "activate":
-                if let url = URL(string: "https://cubacadabra.com/about/") {
-                    UIApplication.shared.open(url)
-                }
+                UIApplication.shared.open(AppLinks.about)
             case "build.tool" where event.phase == "activate":
                 let tools = ["place", "rotate", "remove", "recolor"]
                 buildTool = tools[(tools.firstIndex(of: buildTool).map { ($0 + 1) % tools.count } ?? 0)]
