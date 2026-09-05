@@ -70,6 +70,7 @@ final class GameViewModel: ObservableObject {
     private let loader = GamePackageLoader()
     private let authentication = AppAuthenticationService()
     private let googleSignIn = NativeGoogleSignInService()
+    private let installationMarkerKey = "cubacadabra.installation-marker"
     private let blockedPlayerIDsKey = "cubacadabra.blocked-player-ids"
     private var engine: EngineBridge?
     private var lastTick: Date?
@@ -89,6 +90,18 @@ final class GameViewModel: ObservableObject {
     private var gamePaused = false
 
     init() {
+        // iOS can retain Keychain credentials after an app is deleted. The
+        // UserDefaults marker does not survive deletion, so a missing marker
+        // means this is a fresh install and the old signed-in session must not
+        // put the user straight back into an under-13 gate.
+        let hasLocalInstallData = UserDefaults.standard.string(forKey: "cubacadabra.player-id") != nil
+        if UserDefaults.standard.string(forKey: installationMarkerKey) == nil {
+            UserDefaults.standard.set(UUID().uuidString, forKey: installationMarkerKey)
+            if !hasLocalInstallData {
+                authentication.clearTokens()
+                googleSignIn.signOut()
+            }
+        }
         let storedIDs = UserDefaults.standard.stringArray(forKey: blockedPlayerIDsKey) ?? []
         blockedPlayerIDs = Set(storedIDs)
     }
