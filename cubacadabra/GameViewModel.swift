@@ -287,8 +287,7 @@ final class GameViewModel: ObservableObject {
                 UIApplication.shared.open(AppLinks.about)
             case "shared.sign_in" where event.phase == "activate":
                 beginSignIn()
-            case "shared.sign_out" where event.phase == "activate":
-                signOut()
+            case "shared.leave_game" where event.phase == "activate":
                 gameExitRequestID &+= 1
             case "build.tool" where event.phase == "activate":
                 let tools = ["place", "rotate", "remove", "recolor"]
@@ -392,13 +391,6 @@ final class GameViewModel: ObservableObject {
             }
             isSigningIn = false
         }
-    }
-
-    private func signOut() {
-        guard !isSigningIn else { return }
-        authentication.clearTokens()
-        googleSignIn.signOut()
-        clearAuthentication()
     }
 
     func cancelUsernameEdit() {
