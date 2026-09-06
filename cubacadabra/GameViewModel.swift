@@ -540,7 +540,7 @@ final class GameViewModel: ObservableObject {
         engine.setRemotePlayers([])
         engine.setReducedEffects(false)
         engine.setUISuppressed(true)
-        engine.resetView()
+        engine.resetShowcaseView()
         frame = engine.frame()
     }
 

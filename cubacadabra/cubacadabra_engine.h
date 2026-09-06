@@ -58,6 +58,7 @@ uintptr_t engine_ui_event_len(const CubacadabraEngine *engine);
 uintptr_t engine_ui_node_count(const CubacadabraEngine *engine);
 void engine_step(CubacadabraEngine *engine, float delta);
 void engine_reset_view(CubacadabraEngine *engine);
+void engine_reset_showcase_view(CubacadabraEngine *engine);
 void engine_reconcile_player(
     CubacadabraEngine *engine,
     float x,

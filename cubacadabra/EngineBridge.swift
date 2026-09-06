@@ -107,6 +107,10 @@ final class EngineBridge {
         engine_reset_view(handle)
     }
 
+    func resetShowcaseView() {
+        engine_reset_showcase_view(handle)
+    }
+
     func setReducedEffects(_ reduced: Bool) {
         engine_set_reduced_effects(handle, reduced ? 1 : 0)
     }

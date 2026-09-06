@@ -252,7 +252,7 @@ struct CharacterLabView: View {
             }
             .buttonStyle(.plain)
             Button {
-                model.renderEngine?.resetView()
+                model.renderEngine?.resetShowcaseView()
                 status = "Preview camera reset. Drag the preview to look around."
             } label: {
                 Label("Reset view", systemImage: "arrow.counterclockwise")
