@@ -118,14 +118,18 @@ struct HomeView: View {
                 .minimumScaleFactor(0.82)
             Text(model.hasEnteredGame
                 ? "Return to the place you left off and keep exploring."
-                : "Start in the lobby, find a gate, and see who else is exploring.")
+                : model.package?.lobbyEnabled == false
+                    ? "Enter the shared experience and see who else is exploring."
+                    : "Start in the lobby, find a gate, and see who else is exploring.")
                 .font(.system(size: 17, weight: .medium, design: .rounded))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             Button(action: enterGame) {
                 HStack(spacing: 12) {
-                    Text(model.hasEnteredGame ? "RESUME GAME" : "ENTER THE LOBBY")
+                    Text(model.hasEnteredGame
+                        ? "RESUME GAME"
+                        : model.package?.lobbyEnabled == false ? "ENTER GAME" : "ENTER THE LOBBY")
                     Spacer()
                     Image(systemName: "arrow.right")
                         .font(.system(size: 15, weight: .bold))
@@ -141,7 +145,9 @@ struct HomeView: View {
             .accessibilityHint(
                 model.hasEnteredGame
                     ? "Returns to your paused game"
-                    : "Opens the interactive game lobby"
+                    : model.package?.lobbyEnabled == false
+                        ? "Opens the shared game experience"
+                        : "Opens the interactive game lobby"
             )
 
             if model.hasEnteredGame {

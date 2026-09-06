@@ -111,6 +111,7 @@ final class GameViewModel: ObservableObject {
     private var engine: EngineBridge?
     private var lastTick: Date?
     private var runtimeWorldIDs: [String] = []
+    private var lobbyEnabled = true
     private var forward: Float = 0
     private var strafe: Float = 0
     private var jumpQueued = false
@@ -180,8 +181,8 @@ final class GameViewModel: ObservableObject {
         do {
             let loaded = try await loader.load(gameID: "first-game")
             let loadedPackage = loaded.package
-            guard loadedPackage.worldDefinition(named: loadedPackage.startWorld) != nil else {
-                throw GamePackageError.missingWorld(loadedPackage.startWorld)
+            guard loadedPackage.worldDefinition(named: loadedPackage.initialWorld) != nil else {
+                throw GamePackageError.missingWorld(loadedPackage.initialWorld)
             }
             let loadedEngine = try makeEngine(from: loaded)
             runtimeWorldIDs = loadedPackage.runtimeWorldEntries().map(\.id)
@@ -189,10 +190,11 @@ final class GameViewModel: ObservableObject {
             selectedGameID = "first-game"
             username = worldSocket.username
             loadedEngine.setUsername(username)
-            worldID = loadedPackage.startWorld
-            worldSocket.setHidden(worldID == "settings")
             engine = loadedEngine
             let initialFrame = loadedEngine.frame()
+            worldID = runtimeWorldIDs[safe: initialFrame.activeWorldIndex] ?? loadedPackage.initialWorld
+            lobbyEnabled = loadedPackage.lobbyEnabled && worldID == "lobby"
+            worldSocket.setHidden(worldID == "settings")
             frame = initialFrame
             lastTick = nil
             isLoading = false
@@ -517,8 +519,9 @@ final class GameViewModel: ObservableObject {
         package = nextPackage
         selectedGameID = game.id
         runtimeWorldIDs = nextPackage.runtimeWorldEntries().map(\.id)
-        worldID = nextPackage.startWorld
         frame = nextEngine.frame()
+        worldID = runtimeWorldIDs[safe: frame?.activeWorldIndex ?? -1] ?? nextPackage.initialWorld
+        lobbyEnabled = nextPackage.lobbyEnabled && worldID == "lobby"
         buildPhase = "build"
         buildPrompt = ""
         buildBlockCount = 0
@@ -1063,6 +1066,7 @@ final class GameViewModel: ObservableObject {
 
     func returnToLobby() {
         pendingSessionWorldID = nil
+        guard lobbyEnabled else { return }
         guard let index = runtimeWorldIDs.firstIndex(of: "lobby"), engine?.startWorld(index) == true else { return }
         worldID = "lobby"
         buildPhase = "build"

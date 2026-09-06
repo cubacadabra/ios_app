@@ -3,6 +3,7 @@ import SwiftUI
 
 struct GamePackage: Decodable {
     let startWorld: String
+    let lobby: Bool?
     let launch: LaunchRoute
     let scene: SceneDefinition
     let palette: [String: String]
@@ -10,6 +11,15 @@ struct GamePackage: Decodable {
     let launchPads: [LaunchPadDefinition]
     let blocks: [BlockDefinition]
     let worlds: [String: WorldDefinition]
+
+    var lobbyEnabled: Bool { lobby != false }
+
+    var initialWorld: String {
+        if lobbyEnabled || startWorld != "lobby" {
+            return startWorld
+        }
+        return launch.destinationWorld
+    }
 
     func worldDefinition(named id: String) -> WorldDefinition? {
         if id == "lobby" {
@@ -358,8 +368,8 @@ struct GamePackageLoader {
         } catch {
             throw GamePackageError.invalidBundledPackage
         }
-        guard package.worldDefinition(named: package.startWorld) != nil else {
-            throw GamePackageError.missingWorld(package.startWorld)
+        guard package.worldDefinition(named: package.initialWorld) != nil else {
+            throw GamePackageError.missingWorld(package.initialWorld)
         }
         if let expectedGameID,
            let manifestObject = try? JSONSerialization.jsonObject(with: manifestData) as? [String: Any],
