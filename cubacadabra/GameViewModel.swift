@@ -25,6 +25,40 @@ private struct EngineUIEvent: Decodable {
     }
 }
 
+private struct RemotePlayerState {
+    var position: SIMD3<Float>
+    var yaw: Float
+    var moving: Bool
+    var sprinting: Bool
+    var generation: UInt32
+    var motionSequence: UInt64
+    var appearance: WorldAppearance?
+}
+
+private struct RemoteUpdateMessage: Encodable {
+    let version: UInt16
+    let sequence: UInt64
+    let worldID: String?
+    let players: [RemoteUpdatePlayer]
+
+    enum CodingKeys: String, CodingKey {
+        case version, sequence
+        case worldID = "worldId"
+        case players
+    }
+}
+
+private struct RemoteUpdatePlayer: Encodable {
+    let id: String
+    let generation: UInt32
+    let position: [Float]
+    let yaw: Float
+    let moving: Bool
+    let sprinting: Bool
+    let motionSequence: UInt64
+    let appearance: WorldAppearance?
+}
+
 @MainActor
 final class GameViewModel: ObservableObject {
     @Published private(set) var package: GamePackage?
@@ -85,7 +119,9 @@ final class GameViewModel: ObservableObject {
     private var noticeTask: Task<Void, Never>?
     private var moderationNoticeTask: Task<Void, Never>?
     private var buildActionNoticeTask: Task<Void, Never>?
-    private var remotePlayers: [String: EngineRemotePlayer] = [:]
+    private var remotePlayers: [String: RemotePlayerState] = [:]
+    private var remoteSequence: UInt64 = 0
+    private var remoteRosterDirty = true
     private var connectedWorldID: String?
     private var pendingSessionWorldID: String?
     private var gamePaused = false
@@ -203,12 +239,7 @@ final class GameViewModel: ObservableObject {
         }
         let delta = Float(min(max(date.timeIntervalSince(lastTick), 0), 0.05))
         self.lastTick = date
-        let visibleRemotePlayerIDs = remotePlayers.keys
-            .filter { !blockedPlayerIDs.contains($0) }
-            .sorted()
-        engine.setRemotePlayers(characterLabActive || worldID == "settings"
-            ? []
-            : visibleRemotePlayerIDs.compactMap { remotePlayers[$0] })
+        syncRemotePlayers()
         let labForward: Float = switch characterLabMotion {
         case "walk": 1
         case "run": 1
@@ -243,9 +274,6 @@ final class GameViewModel: ObservableObject {
             forward = 0
             strafe = 0
             sprinting = false
-            if activeWorldID == "settings" {
-                engine.setRemotePlayers([])
-            }
             connectWorld(activeWorldID)
         }
         frame = nextFrame
@@ -424,6 +452,8 @@ final class GameViewModel: ObservableObject {
         pendingSessionWorldID = nil
         remotePlayers.removeAll()
         remotePlayerNames.removeAll()
+        remoteSequence = 0
+        remoteRosterDirty = true
         engine = nextEngine
         package = nextPackage
         selectedGameID = game.id
@@ -537,7 +567,7 @@ final class GameViewModel: ObservableObject {
         characterLabMotion = "idle"
         characterLabJumpQueued = false
         characterLabAppearanceRevision = max(engine.appearanceRevision, 1)
-        engine.setRemotePlayers([])
+        remoteRosterDirty = true
         engine.setReducedEffects(false)
         engine.setUISuppressed(true)
         engine.resetShowcaseView()
@@ -549,6 +579,7 @@ final class GameViewModel: ObservableObject {
         characterLabActive = false
         characterLabMotion = "idle"
         characterLabJumpQueued = false
+        remoteRosterDirty = true
         engine?.setReducedEffects(false)
         engine?.setUISuppressed(false)
         pauseGame()
@@ -581,6 +612,9 @@ final class GameViewModel: ObservableObject {
         guard let data = try? JSONSerialization.data(withJSONObject: definition),
               let source = String(data: data, encoding: .utf8) else { return 0 }
         let status = engine.setLocalAppearance(source)
+        if status == 1 || status == 3 {
+            worldSocket.setAppearance(source)
+        }
         frame = engine.frame()
         return status
     }
@@ -688,14 +722,32 @@ final class GameViewModel: ObservableObject {
         if event.type == "player_leave" {
             remotePlayers.removeValue(forKey: event.playerID)
             remotePlayerNames.removeValue(forKey: event.playerID)
+            remoteRosterDirty = true
             guard !blockedPlayerIDs.contains(event.playerID) else { return }
         } else {
             guard !blockedPlayerIDs.contains(event.playerID) else { return }
         }
+        if event.type == "player_join" {
+            remotePlayers[event.playerID] = RemotePlayerState(
+                position: .zero,
+                yaw: 0,
+                moving: false,
+                sprinting: false,
+                generation: event.generation,
+                motionSequence: event.motionSequence,
+                appearance: event.appearance
+            )
+            remoteRosterDirty = true
+        } else if event.type == "appearance" {
+            remotePlayers[event.playerID]?.appearance = event.appearance
+            remoteRosterDirty = true
+        }
         if event.type == "player_join" || event.type == "player_name" {
             remotePlayerNames[event.playerID] = event.username ?? defaultPlayerLabel(event.playerID)
         }
-        showPresenceEvent(event)
+        if event.type != "appearance" {
+            showPresenceEvent(event)
+        }
     }
 
     private func handleSessionEvent(_ event: WorldSessionEvent) {
@@ -770,12 +822,17 @@ final class GameViewModel: ObservableObject {
         if remotePlayerNames[event.playerID] == nil {
             remotePlayerNames[event.playerID] = defaultPlayerLabel(event.playerID)
         }
-        remotePlayers[event.playerID] = EngineRemotePlayer(
+        let previous = remotePlayers[event.playerID]
+        remotePlayers[event.playerID] = RemotePlayerState(
             position: event.position,
             yaw: event.yaw,
             moving: event.moving,
-            sprinting: event.sprinting
+            sprinting: event.sprinting,
+            generation: event.generation == 0 ? previous?.generation ?? 0 : event.generation,
+            motionSequence: event.motionSequence,
+            appearance: previous?.appearance
         )
+        remoteRosterDirty = true
     }
 
     private func showPresenceEvent(_ event: WorldPresenceEvent) {
@@ -969,8 +1026,41 @@ final class GameViewModel: ObservableObject {
         connectedWorldID = networkWorldID
         remotePlayers.removeAll()
         remotePlayerNames.removeAll()
-        engine?.setRemotePlayers([])
+        remoteSequence = 0
+        remoteRosterDirty = true
+        engine?.resetRemoteSession()
         worldSocket.connect(worldID: networkWorldID)
+    }
+
+    private func syncRemotePlayers() {
+        guard remoteRosterDirty, let engine else { return }
+        let players: [RemoteUpdatePlayer] = characterLabActive || worldID == "settings"
+            ? []
+            : remotePlayers
+                .filter { !blockedPlayerIDs.contains($0.key) }
+                .sorted { $0.key < $1.key }
+                .map { playerID, player in
+                    RemoteUpdatePlayer(
+                        id: playerID,
+                        generation: player.generation,
+                        position: [player.position.x, player.position.y, player.position.z],
+                        yaw: player.yaw,
+                        moving: player.moving,
+                        sprinting: player.sprinting,
+                        motionSequence: player.motionSequence,
+                        appearance: player.appearance
+                    )
+                }
+        remoteSequence &+= 1
+        let message = RemoteUpdateMessage(
+            version: 1,
+            sequence: remoteSequence,
+            worldID: worldID == "settings" ? nil : worldID,
+            players: players
+        )
+        guard let data = try? JSONEncoder().encode(message),
+              engine.applyRemoteUpdate(data) != 0 else { return }
+        remoteRosterDirty = false
     }
 
     private func persistBlockedPlayerIDs() {

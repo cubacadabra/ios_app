@@ -27,6 +27,19 @@ struct WorldPresenceEvent {
     let type: String
     let playerID: String
     let username: String?
+    let generation: UInt32
+    let motionSequence: UInt64
+    let appearance: WorldAppearance?
+}
+
+struct WorldAppearance: Codable, Equatable {
+    let version: UInt16?
+    let body: String?
+    let face: String?
+    let outfit: String?
+    let equipment: [String: String]?
+    let colors: [String: String]?
+    let revision: UInt32?
 }
 
 struct WorldSessionEvent {
@@ -49,6 +62,8 @@ struct WorldMovementEvent {
     let yaw: Float
     let moving: Bool
     let sprinting: Bool
+    let generation: UInt32
+    let motionSequence: UInt64
     let isSelf: Bool
     let corrected: Bool
 }
@@ -82,7 +97,7 @@ final class WorldSocketClient {
     fileprivate static let movePositionEpsilon: Float = 0.01
     fileprivate static let moveYawEpsilon: Float = 0.01
 
-    let playerID: String
+    private(set) var playerID: String
     private(set) var username: String
     private(set) var accessToken: String?
 
@@ -104,6 +119,7 @@ final class WorldSocketClient {
     private var lastMoveSentAt = Date.distantPast.timeIntervalSinceReferenceDate
     private var lastSentMove: SentMove?
     private var pendingUsername: String
+    private var pendingAppearance: WorldAppearance?
     private var hidden = false
     private var pendingExperienceMessages: [String] = []
 
@@ -175,7 +191,7 @@ final class WorldSocketClient {
             return
         }
         components.queryItems = [
-            URLQueryItem(name: "player_id", value: playerID),
+            URLQueryItem(name: "client", value: "ios"),
             URLQueryItem(name: "game", value: gameID),
         ]
         guard let url = components.url else {
@@ -192,8 +208,6 @@ final class WorldSocketClient {
         lastMoveSentAt = Date.distantPast.timeIntervalSinceReferenceDate
         lastSentMove = nil
         nextSocket.resume()
-        sendUsername(pendingUsername, on: nextSocket)
-        sendVisibility(on: nextSocket)
         receiveTask = Task { [weak self] in
             await self?.receiveMessages(from: nextSocket, generation: expectedGeneration)
         }
@@ -235,6 +249,12 @@ final class WorldSocketClient {
         guard let event = try? JSONDecoder().decode(WorldEventEnvelope.self, from: data) else { return }
         if event.type == "session_identity" {
             guard let eventPlayerID = event.id else { return }
+            playerID = eventPlayerID
+            if event.hasUsername != true || event.username != pendingUsername {
+                sendUsername(pendingUsername, on: socketTask)
+            }
+            sendVisibility(on: socketTask)
+            sendAppearance(on: socketTask)
             onSession(WorldSessionEvent(
                 playerID: eventPlayerID,
                 username: event.username,
@@ -267,6 +287,8 @@ final class WorldSocketClient {
                 yaw: yaw,
                 moving: event.moving ?? false,
                 sprinting: event.sprinting ?? false,
+                generation: event.generation ?? 0,
+                motionSequence: event.motionSequence ?? 0,
                 isSelf: eventPlayerID == playerID,
                 corrected: event.corrected ?? false
             ))
@@ -287,10 +309,20 @@ final class WorldSocketClient {
             ))
             return
         }
-        guard event.type == "player_join" || event.type == "player_leave" || event.type == "player_name",
+        guard event.type == "player_join"
+                || event.type == "player_leave"
+                || event.type == "player_name"
+                || event.type == "appearance",
               let eventPlayerID = event.id,
               eventPlayerID != playerID else { return }
-        onEvent(WorldPresenceEvent(type: event.type, playerID: eventPlayerID, username: event.username))
+        onEvent(WorldPresenceEvent(
+            type: event.type,
+            playerID: eventPlayerID,
+            username: event.username,
+            generation: event.generation ?? 0,
+            motionSequence: event.motionSequence ?? 0,
+            appearance: event.appearance
+        ))
     }
 
     func setUsername(_ nextUsername: String) {
@@ -307,6 +339,15 @@ final class WorldSocketClient {
         }
         pendingUsername = trimmed
         sendUsername(trimmed, on: socketTask)
+    }
+
+    func setAppearance(_ source: String) {
+        guard let data = source.data(using: .utf8),
+              let nextAppearance = try? JSONDecoder().decode(WorldAppearance.self, from: data) else {
+            return
+        }
+        pendingAppearance = nextAppearance
+        sendAppearance(on: socketTask)
     }
 
     func setAccessToken(_ nextAccessToken: String?) {
@@ -336,6 +377,14 @@ final class WorldSocketClient {
     private func sendUsername(_ value: String, on task: URLSessionWebSocketTask?) {
         guard !stopped, let task, task.state == .running else { return }
         let message = WorldUsernameMessage(username: value)
+        guard let data = try? JSONEncoder().encode(message),
+              let text = String(data: data, encoding: .utf8) else { return }
+        task.send(.string(text)) { _ in }
+    }
+
+    private func sendAppearance(on task: URLSessionWebSocketTask?) {
+        guard !stopped, let task, task.state == .running, let pendingAppearance else { return }
+        let message = WorldAppearanceMessage(appearance: pendingAppearance)
         guard let data = try? JSONEncoder().encode(message),
               let text = String(data: data, encoding: .utf8) else { return }
         task.send(.string(text)) { _ in }
@@ -514,6 +563,8 @@ private struct WorldEventEnvelope: Decodable {
     let moving: Bool?
     let sprinting: Bool?
     let corrected: Bool?
+    let generation: UInt32?
+    let motionSequence: UInt64?
     let username: String?
     let hasUsername: Bool?
     let loggedIn: Bool?
@@ -528,9 +579,10 @@ private struct WorldEventEnvelope: Decodable {
     let serverNow: Int64?
     let blocks: [WorldBuildBlock]?
     let launch: WorldLaunchEnvelope?
+    let appearance: WorldAppearance?
 
     enum CodingKeys: String, CodingKey {
-        case type, id, x, y, z, yaw, moving, sprinting, corrected, username, hasUsername, loggedIn, authenticated, code, kind, phase, prompt
+        case type, id, x, y, z, yaw, moving, sprinting, corrected, generation, motionSequence, username, hasUsername, loggedIn, authenticated, code, kind, phase, prompt, appearance
         case sessionWorldID = "sessionWorldId"
         case playerIDs = "playerIds"
         case startsAt, serverNow, blocks, launch
@@ -554,6 +606,11 @@ private struct WorldMoveMessage: Encodable {
 private struct WorldUsernameMessage: Encodable {
     let type = "set_username"
     let username: String
+}
+
+private struct WorldAppearanceMessage: Encodable {
+    let type = "set_appearance"
+    let appearance: WorldAppearance
 }
 
 private struct WorldVisibilityMessage: Encodable {
