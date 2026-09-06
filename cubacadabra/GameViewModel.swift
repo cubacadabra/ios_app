@@ -82,6 +82,7 @@ final class GameViewModel: ObservableObject {
     @Published private(set) var blockedPlayerIDs: Set<String>
     @Published private(set) var moderationNotice: ModerationNotice?
     @Published private(set) var gameExitRequestID = 0
+    @Published private(set) var guestGameRequestID = 0
     @Published private(set) var buildPrompt = ""
     @Published private(set) var buildPhase = "build"
     @Published private(set) var buildBlockCount = 0
@@ -431,7 +432,7 @@ final class GameViewModel: ObservableObject {
         }
     }
 
-    /// Ends the signed-in session and leaves the app at its sign-in screen.
+    /// Ends the signed-in session and starts a new anonymous game session.
     /// The profile's birthday is server-owned and is never removed locally.
     func logOut() {
         authentication.clearTokens()
@@ -444,6 +445,24 @@ final class GameViewModel: ObservableObject {
         authenticationNotice = nil
         engine?.setAuthenticated(false)
         worldSocket.setAccessToken(nil)
+        requestGuestGame()
+    }
+
+    private func requestGuestGame() {
+        guard selectedGameID != "first-game" else {
+            guestGameRequestID &+= 1
+            return
+        }
+
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await selectGame(GameCatalogEntry.available[0])
+                guestGameRequestID &+= 1
+            } catch {
+                gameLog.error("Could not return to first game after logout: \(error.localizedDescription, privacy: .public)")
+            }
+        }
     }
 
     var profileAge: Int? {

@@ -7,7 +7,7 @@ struct ContentView: View {
     @StateObject private var model: GameViewModel
     @StateObject private var orientationController: AppOrientationController
     @State private var gamePresented = false
-    @State private var didAutoEnterFreshInstall = false
+    @State private var didAutoEnterGuestGame = false
     @State private var safetyCenterPresented = false
     private let tick = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
 
@@ -32,7 +32,7 @@ struct ContentView: View {
         }
         .task {
             await model.load()
-            autoEnterFreshInstallIfReady()
+            autoEnterGuestGameIfReady()
         }
         .onReceive(tick) { date in
             if gamePresented { model.tick(at: date) }
@@ -47,6 +47,10 @@ struct ContentView: View {
             guard gamePresented else { return }
             gamePresented = false
         }
+        .onChange(of: model.guestGameRequestID) { _ in
+            guard !model.isLoading, model.errorMessage == nil else { return }
+            gamePresented = true
+        }
         .onChange(of: gamePresented) { isPresented in
             orientationController.setGameActive(isPresented)
             if isPresented {
@@ -59,24 +63,19 @@ struct ContentView: View {
             guard phase == .active else { return }
             model.refreshAuthentication()
         }
-        .onChange(of: model.isAuthenticated) { isAuthenticated in
-            if !isAuthenticated {
-                gamePresented = false
-            }
-        }
         .onDisappear { model.disconnect() }
         .sheet(isPresented: $safetyCenterPresented) {
             SafetyCenterView(model: model)
         }
     }
 
-    private func autoEnterFreshInstallIfReady() {
-        guard model.isFreshInstall,
-              !didAutoEnterFreshInstall,
+    private func autoEnterGuestGameIfReady() {
+        guard !model.isAuthenticated,
+              !didAutoEnterGuestGame,
               !model.isLoading,
               model.errorMessage == nil,
               !gamePresented else { return }
-        didAutoEnterFreshInstall = true
+        didAutoEnterGuestGame = true
         gamePresented = true
     }
 
