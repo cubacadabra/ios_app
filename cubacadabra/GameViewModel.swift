@@ -280,7 +280,7 @@ final class GameViewModel: ObservableObject {
 
     func zoomChangedBy(delta: CGFloat) {
         guard !usernameEditorOpen else { return }
-        zoomDelta -= Float(delta * 8)
+        zoomDelta -= Float(delta * 20)
     }
 
     func zoomEnded() {}

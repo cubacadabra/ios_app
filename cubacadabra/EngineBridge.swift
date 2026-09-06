@@ -281,7 +281,7 @@ final class EngineBridge {
         )
         let player = EnginePlayer(
             position: SIMD3(snapshot[safe: 0] ?? 0, snapshot[safe: 1] ?? 0, snapshot[safe: 2] ?? 0),
-            yaw: snapshot[safe: 3] ?? 0,
+            yaw: engine_player_facing_yaw(handle),
             walkCycle: snapshot[safe: 4] ?? 0,
             grounded: (snapshot[safe: 5] ?? 0) > 0.5,
             moving: (snapshot[safe: 6] ?? 0) > 0.5,

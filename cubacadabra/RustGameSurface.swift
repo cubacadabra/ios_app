@@ -157,6 +157,7 @@ final class InteractiveGameView: MTKView {
     private var cameraTouches: [UInt64: CGPoint] = [:]
     private var cameraTouchMoved = false
     private var previousPinchDistance: CGFloat?
+    private var previousPinchIDs: [UInt64] = []
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -256,12 +257,19 @@ final class InteractiveGameView: MTKView {
         guard cameraTouches.count >= 2 else {
             if previousPinchDistance != nil { onZoomEnded?() }
             previousPinchDistance = nil
+            previousPinchIDs = []
             return
         }
-        let points = Array(cameraTouches.values.prefix(2))
+        let pinchIDs = Array(cameraTouches.keys.sorted().prefix(2))
+        if pinchIDs != previousPinchIDs {
+            previousPinchDistance = nil
+            previousPinchIDs = pinchIDs
+        }
+        let points = pinchIDs.compactMap { cameraTouches[$0] }
         let distance = hypot(points[0].x - points[1].x, points[0].y - points[1].y)
-        if let previousPinchDistance {
-            onZoomDelta?((distance - previousPinchDistance) / 100)
+        if let previousPinchDistance, previousPinchDistance > 10, distance > 10 {
+            // Ratios feel the same at any finger spacing or display scale.
+            onZoomDelta?(log(distance / previousPinchDistance))
             cameraTouchMoved = true
         }
         previousPinchDistance = distance
