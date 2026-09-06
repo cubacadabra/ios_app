@@ -7,7 +7,7 @@ struct SignInChoiceView: View {
     @ObservedObject var model: GameViewModel
     @Environment(\.colorScheme) private var colorScheme
     @FocusState private var focusedField: Field?
-    @State private var emailMode = false
+    @State private var emailMode = true
     @State private var email = "play-review@cubacadabra.com"
     @State private var password = "testing"
 

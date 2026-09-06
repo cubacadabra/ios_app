@@ -389,7 +389,10 @@ final class GameViewModel: ObservableObject {
         if isAuthenticated {
             myCubeRequestID &+= 1
         } else {
-            beginSignIn(presentMyCube: true)
+            // Guest users should see the complete account flow so they can
+            // choose email/password or Google before signing in.
+            authenticationNotice = nil
+            gameExitRequestID &+= 1
         }
     }
 
