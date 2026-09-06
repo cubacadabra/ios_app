@@ -441,11 +441,14 @@ final class GameViewModel: ObservableObject {
         authentication.clearTokens()
         googleSignIn.signOut()
         worldSocket.disconnect()
+        worldSocket.resetForGuest()
         connectedWorldID = nil
         hasEnteredGame = false
         isAuthenticated = false
         authUser = nil
         authenticationNotice = nil
+        username = worldSocket.username
+        engine?.setUsername(username)
         engine?.setAuthenticated(false)
         worldSocket.setAccessToken(nil)
         requestGuestGame()
@@ -816,7 +819,7 @@ final class GameViewModel: ObservableObject {
             authUser = nil
         }
         if let serverUsername = event.username,
-           event.hasUsername,
+           (event.hasUsername || !event.loggedIn),
            !serverUsername.isEmpty {
             username = serverUsername
             engine?.setUsername(serverUsername)

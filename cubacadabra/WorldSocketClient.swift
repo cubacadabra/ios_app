@@ -119,7 +119,7 @@ final class WorldSocketClient {
     private var gameID = "first-game"
     private var lastMoveSentAt = Date.distantPast.timeIntervalSinceReferenceDate
     private var lastSentMove: SentMove?
-    private var pendingUsername: String
+    private var pendingUsername: String?
     private var pendingAppearance: WorldAppearance?
     private var hidden = false
     private var pendingExperienceMessages: [String] = []
@@ -252,7 +252,12 @@ final class WorldSocketClient {
             guard let eventPlayerID = event.id else { return }
             playerID = eventPlayerID
             if event.hasUsername != true || event.username != pendingUsername {
-                sendUsername(pendingUsername, on: socketTask)
+                if let pendingUsername {
+                    sendUsername(pendingUsername, on: socketTask)
+                }
+            }
+            if event.loggedIn != true, let serverUsername = event.username, !serverUsername.isEmpty {
+                username = serverUsername
             }
             sendVisibility(on: socketTask)
             sendAppearance(on: socketTask)
@@ -365,6 +370,18 @@ final class WorldSocketClient {
         username = trimmed
         pendingUsername = trimmed
         UserDefaults.standard.set(trimmed, forKey: "cubacadabra.username")
+    }
+
+    /// Clears identity data that belongs to the signed-in session before the
+    /// next socket is opened as a guest. The backend assigns a fresh live
+    /// player ID when that socket connects.
+    func resetForGuest() {
+        playerID = "ios-\(UUID().uuidString.lowercased())"
+        username = Self.defaultUsername(for: playerID)
+        pendingUsername = nil
+        pendingAppearance = nil
+        UserDefaults.standard.set(playerID, forKey: "cubacadabra.player-id")
+        UserDefaults.standard.removeObject(forKey: "cubacadabra.username")
     }
 
     func reconnect() {
@@ -529,13 +546,16 @@ final class WorldSocketClient {
     }
 
     private static func loadUsername(for playerID: String) -> String {
-        let fallback = "iOS Player \(String(playerID.suffix(4)).uppercased())"
         let key = "cubacadabra.username"
         guard let stored = UserDefaults.standard.string(forKey: key),
               !stored.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return fallback
+            return defaultUsername(for: playerID)
         }
         return stored
+    }
+
+    private static func defaultUsername(for playerID: String) -> String {
+        "iOS Player \(String(playerID.suffix(4)).uppercased())"
     }
 }
 
