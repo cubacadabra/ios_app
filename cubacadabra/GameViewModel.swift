@@ -26,12 +26,12 @@ private struct EngineUIEvent: Decodable {
 }
 
 private struct RemotePlayerState {
+    var username: String
     var position: SIMD3<Float>
     var yaw: Float
     var moving: Bool
     var sprinting: Bool
     var generation: UInt32
-    var motionSequence: UInt64
     var appearance: WorldAppearance?
 }
 
@@ -50,12 +50,12 @@ private struct RemoteUpdateMessage: Encodable {
 
 private struct RemoteUpdatePlayer: Encodable {
     let id: String
+    let username: String
     let generation: UInt32
     let position: [Float]
     let yaw: Float
     let moving: Bool
     let sprinting: Bool
-    let motionSequence: UInt64
     let appearance: WorldAppearance?
 }
 
@@ -729,17 +729,20 @@ final class GameViewModel: ObservableObject {
         }
         if event.type == "player_join" {
             remotePlayers[event.playerID] = RemotePlayerState(
+                username: event.username ?? defaultPlayerLabel(event.playerID),
                 position: .zero,
                 yaw: 0,
                 moving: false,
                 sprinting: false,
                 generation: event.generation,
-                motionSequence: event.motionSequence,
                 appearance: event.appearance
             )
             remoteRosterDirty = true
         } else if event.type == "appearance" {
             remotePlayers[event.playerID]?.appearance = event.appearance
+            remoteRosterDirty = true
+        } else if event.type == "player_name" {
+            remotePlayers[event.playerID]?.username = event.username ?? defaultPlayerLabel(event.playerID)
             remoteRosterDirty = true
         }
         if event.type == "player_join" || event.type == "player_name" {
@@ -839,12 +842,12 @@ final class GameViewModel: ObservableObject {
         }
         let previous = remotePlayers[event.playerID]
         remotePlayers[event.playerID] = RemotePlayerState(
+            username: previous?.username ?? remotePlayerNames[event.playerID] ?? defaultPlayerLabel(event.playerID),
             position: event.position,
             yaw: event.yaw,
             moving: event.moving,
             sprinting: event.sprinting,
             generation: event.generation == 0 ? previous?.generation ?? 0 : event.generation,
-            motionSequence: event.motionSequence,
             appearance: previous?.appearance
         )
         remoteRosterDirty = true
@@ -1057,12 +1060,12 @@ final class GameViewModel: ObservableObject {
                 .map { playerID, player in
                     RemoteUpdatePlayer(
                         id: playerID,
+                        username: player.username,
                         generation: player.generation,
                         position: [player.position.x, player.position.y, player.position.z],
                         yaw: player.yaw,
                         moving: player.moving,
                         sprinting: player.sprinting,
-                        motionSequence: player.motionSequence,
                         appearance: player.appearance
                     )
                 }
