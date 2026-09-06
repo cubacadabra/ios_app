@@ -166,6 +166,15 @@ final class AppAuthenticationService: NSObject {
         return result
     }
 
+    func authenticateEmail(email: String, password: String) async throws -> AppAuthResult {
+        let result = try await tokenRequest(
+            path: "auth/app/email",
+            body: ["email": email, "password": password]
+        )
+        saveTokens(accessToken: result.accessToken, refreshToken: result.refreshToken)
+        return result
+    }
+
     func saveBirthday(_ dob: String) async throws -> AppProfileUpdateResult {
         try await updateProfile(path: "auth/birthday", body: ["dob": dob])
     }

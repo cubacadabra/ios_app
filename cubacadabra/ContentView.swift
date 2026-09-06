@@ -87,7 +87,7 @@ struct ContentView: View {
         } else if let message = model.errorMessage {
             ErrorView(message: message, retry: model.retry)
         } else if !model.isAuthenticated {
-            SignInView(model: model)
+            SignInChoiceView(model: model)
         } else if model.needsBirthday {
             BirthdayGateView(model: model)
         } else if model.isUnderThirteen {

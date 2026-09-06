@@ -3,9 +3,18 @@ import SwiftUI
 private let cubacadabraCoral = Color(red: 0.91, green: 0.39, blue: 0.29)
 private let cubacadabraInk = Color(red: 0.15, green: 0.29, blue: 0.29)
 
-struct SignInView: View {
+struct SignInChoiceView: View {
     @ObservedObject var model: GameViewModel
     @Environment(\.colorScheme) private var colorScheme
+    @FocusState private var focusedField: Field?
+    @State private var emailMode = false
+    @State private var email = "play-review@cubacadabra.com"
+    @State private var password = "testing"
+
+    private enum Field: Hashable {
+        case email
+        case password
+    }
 
     var body: some View {
         AccountSurface {
@@ -13,45 +22,161 @@ struct SignInView: View {
                 BrandMark()
                     .padding(.bottom, 34)
 
-                Text("Welcome to cubacadabra")
+                Text(emailMode ? "Sign in to cubacadabra" : "Welcome to cubacadabra")
                     .font(.system(size: 36, weight: .bold, design: .rounded))
                     .foregroundStyle(colorScheme == .dark ? .primary : cubacadabraInk)
 
-                Text("Sign in to create your player profile and explore the cubes.")
+                Text(emailMode
+                     ? "Use your cubacadabra email and password to continue."
+                     : "Sign in to create your player profile and explore the cubes.")
                     .font(.system(size: 17, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Button {
-                    model.signIn()
-                } label: {
-                    HStack(spacing: 12) {
-                        if model.isSigningIn {
-                            ProgressView().tint(.white)
-                        } else {
-                            Image(systemName: "person.crop.circle.badge.plus")
-                        }
-                        Text(model.isSigningIn ? "SIGNING IN…" : "SIGN IN")
-                        Spacer()
-                        Image(systemName: "arrow.right")
+                if emailMode {
+                    Button {
+                        focusedField = nil
+                        emailMode = false
+                    } label: {
+                        Label("OTHER SIGN-IN OPTIONS", systemImage: "chevron.left")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .tracking(1.1)
+                            .foregroundStyle(cubacadabraCoral)
                     }
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .tracking(1.2)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 20)
-                    .frame(minHeight: 58)
-                    .background(cubacadabraCoral, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .disabled(model.isSigningIn)
+                    .buttonStyle(.plain)
+                    .disabled(model.isSigningIn)
 
-                if let authenticationNotice = model.authenticationNotice {
-                    Label(authenticationNotice, systemImage: "exclamationmark.circle")
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.red)
+                    VStack(alignment: .leading, spacing: 9) {
+                        Text("EMAIL")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .tracking(1.4)
+                            .foregroundStyle(.secondary)
+                        TextField("you@example.com", text: $email)
+                            .textContentType(.emailAddress)
+                            .keyboardType(.emailAddress)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .focused($focusedField, equals: .email)
+                            .submitLabel(.next)
+                            .onSubmit { focusedField = .password }
+                            .font(.system(size: 17, weight: .regular, design: .rounded))
+                            .padding(.horizontal, 15)
+                            .frame(minHeight: 52)
+                            .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    }
+
+                    VStack(alignment: .leading, spacing: 9) {
+                        Text("PASSWORD")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .tracking(1.4)
+                            .foregroundStyle(.secondary)
+                        SecureField("Password", text: $password)
+                            .textContentType(.password)
+                            .focused($focusedField, equals: .password)
+                            .submitLabel(.go)
+                            .onSubmit { submitEmailSignIn() }
+                            .font(.system(size: 17, weight: .regular, design: .rounded))
+                            .padding(.horizontal, 15)
+                            .frame(minHeight: 52)
+                            .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    }
+
+                    signInNotice
+
+                    Button {
+                        submitEmailSignIn()
+                    } label: {
+                        HStack(spacing: 10) {
+                            if model.isSigningIn { ProgressView().tint(.white) }
+                            Text(model.isSigningIn ? "SIGNING IN…" : "SIGN IN")
+                            Spacer()
+                            Image(systemName: "arrow.right")
+                        }
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .tracking(1.2)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 20)
+                        .frame(minHeight: 58)
+                        .background(cubacadabraCoral, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(model.isSigningIn || email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty)
+                } else {
+                    Text("Choose how you want to continue.")
+                        .font(.system(size: 15, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+
+                    Button {
+                        model.signInWithGoogle()
+                    } label: {
+                        HStack(spacing: 12) {
+                            if model.isSigningIn {
+                                ProgressView().tint(.white)
+                            } else {
+                                Image(systemName: "person.crop.circle.badge.plus")
+                            }
+                            Text(model.isSigningIn ? "SIGNING IN…" : "CONTINUE WITH GOOGLE")
+                            Spacer()
+                            Image(systemName: "arrow.right")
+                        }
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .tracking(1.0)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 20)
+                        .frame(minHeight: 58)
+                        .background(cubacadabraCoral, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(model.isSigningIn)
+
+                    Button {
+                        model.clearAuthenticationNotice()
+                        emailMode = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "envelope")
+                            Text("USE EMAIL INSTEAD")
+                            Spacer()
+                            Image(systemName: "arrow.right")
+                        }
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .tracking(1.0)
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 20)
+                        .frame(minHeight: 56)
+                        .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 17, style: .continuous)
+                                .stroke(.secondary.opacity(0.28), lineWidth: 1)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(model.isSigningIn)
+
+                    signInNotice
                 }
             }
         }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { focusedField = nil }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var signInNotice: some View {
+        if let authenticationNotice = model.authenticationNotice {
+            Label(authenticationNotice, systemImage: "exclamationmark.circle")
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .foregroundStyle(.red)
+        }
+    }
+
+    private func submitEmailSignIn() {
+        focusedField = nil
+        model.signInWithEmail(email: email, password: password)
     }
 }
 

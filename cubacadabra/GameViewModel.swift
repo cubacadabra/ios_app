@@ -394,7 +394,41 @@ final class GameViewModel: ObservableObject {
 
     /// Starts the account flow from the app's full-screen sign-in state.
     func signIn() {
+        signInWithGoogle()
+    }
+
+    func signInWithGoogle() {
         beginSignIn()
+    }
+
+    func clearAuthenticationNotice() {
+        authenticationNotice = nil
+    }
+
+    func signInWithEmail(email: String, password: String) {
+        guard !isSigningIn else { return }
+
+        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedEmail.isEmpty, !password.isEmpty else {
+            authenticationNotice = "Enter your email and password."
+            return
+        }
+
+        isSigningIn = true
+        authenticationNotice = nil
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let result = try await authentication.authenticateEmail(email: normalizedEmail, password: password)
+                applyAuthentication(result)
+            } catch let error as AppAuthError where error == .server(401) {
+                authenticationNotice = "That email or password is not correct."
+            } catch {
+                gameLog.error("Email sign-in failed: \(error.localizedDescription, privacy: .public)")
+                authenticationNotice = "We couldn’t sign you in. Try again."
+            }
+            isSigningIn = false
+        }
     }
 
     /// Ends the signed-in session and leaves the app at its sign-in screen.
