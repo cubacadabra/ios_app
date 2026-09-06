@@ -762,6 +762,11 @@ final class GameViewModel: ObservableObject {
             username = serverUsername
             engine?.setUsername(serverUsername)
         }
+        if let appearance = event.appearance,
+           let data = try? JSONEncoder().encode(appearance),
+           let source = String(data: data, encoding: .utf8) {
+            _ = engine?.setLocalAppearance(source)
+        }
     }
 
     private func applyAuthentication(_ result: AppAuthResult) {

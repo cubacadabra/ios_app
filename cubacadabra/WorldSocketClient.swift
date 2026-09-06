@@ -48,6 +48,7 @@ struct WorldSessionEvent {
     let hasUsername: Bool
     let loggedIn: Bool
     let authenticated: Bool
+    let appearance: WorldAppearance?
 }
 
 struct WorldUsernameEvent {
@@ -260,7 +261,8 @@ final class WorldSocketClient {
                 username: event.username,
                 hasUsername: event.hasUsername ?? false,
                 loggedIn: event.loggedIn ?? event.authenticated ?? false,
-                authenticated: event.authenticated ?? false
+                authenticated: event.authenticated ?? false,
+                appearance: event.appearance
             ))
             return
         }
