@@ -20,8 +20,9 @@ sync_game_package() {
   game_id="$1"
   game_project="$project_dir/../$game_id"
   package_build="$game_package_build/$game_id"
-  manifest_destination="$bundle_resources_destination/manifest-$game_id.json"
-  script_destination="$bundle_resources_destination/game-$game_id.luau"
+  package_destination="$bundle_resources_destination/games/$game_id"
+  manifest_destination="$package_destination/manifest.json"
+  script_destination="$package_destination/game.luau"
 
   if [ ! -f "$game_project/manifest.json" ] || [ ! -f "$game_project/src/main.luau" ]; then
     echo "The $game_id game project is missing manifest.json or src/main.luau: $game_project" >&2
@@ -31,12 +32,12 @@ sync_game_package() {
   echo "Building $game_id package into the iOS app bundle."
   PYTHONPATH="$tools_dir/src${PYTHONPATH:+:$PYTHONPATH}" \
     python3 -m cubacadabra build-game "$game_project" --output "$package_build"
-  mkdir -p "$bundle_resources_destination"
+  mkdir -p "$package_destination"
   cp "$package_build/manifest.json" "$manifest_destination"
   cp "$package_build/game.luau" "$script_destination"
   if [ -d "$package_build/assets" ]; then
-    mkdir -p "$bundle_resources_destination/assets-$game_id"
-    cp -R "$package_build/assets/." "$bundle_resources_destination/assets-$game_id/"
+    mkdir -p "$package_destination/assets"
+    cp -R "$package_build/assets/." "$package_destination/assets/"
   fi
 }
 

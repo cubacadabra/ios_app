@@ -14,6 +14,12 @@ struct GamePackageLoader {
 
     func load(gameID: String = "first-game") async throws -> LoadedGamePackage {
         guard Self.isValidGameID(gameID) else { throw GamePackageError.invalidGameID }
+#if DEBUG
+        // The Xcode build phase assembles the sibling game project into the
+        // app bundle. Prefer that package during local development so a
+        // source edit is not hidden by a package cached from an earlier run.
+        if let bundledPackage = try? loadBundledPackage(for: gameID) { return bundledPackage }
+#endif
         if let cachedPackage = cachedPackage(for: gameID) { return cachedPackage }
         if let bundledPackage = try? loadBundledPackage(for: gameID) { return bundledPackage }
         return try await fetchPackage(for: gameID)
@@ -46,10 +52,17 @@ struct GamePackageLoader {
     }
 
     private func loadBundledPackage(for gameID: String) throws -> LoadedGamePackage {
-        let manifestURL = Bundle.main.url(forResource: "manifest-\(gameID)", withExtension: "json")
-            ?? (gameID == "first-game" ? Bundle.main.url(forResource: "manifest", withExtension: "json") : nil)
-        let scriptURL = Bundle.main.url(forResource: "game-\(gameID)", withExtension: "luau")
-            ?? (gameID == "first-game" ? Bundle.main.url(forResource: "game", withExtension: "luau") : nil)
+        let packageSubdirectory = "games/\(gameID)"
+        let manifestURL = Bundle.main.url(
+            forResource: "manifest",
+            withExtension: "json",
+            subdirectory: packageSubdirectory
+        )
+        let scriptURL = Bundle.main.url(
+            forResource: "game",
+            withExtension: "luau",
+            subdirectory: packageSubdirectory
+        )
         guard let manifestURL, let scriptURL,
               let manifestData = try? Data(contentsOf: manifestURL),
               let scriptData = try? Data(contentsOf: scriptURL),
