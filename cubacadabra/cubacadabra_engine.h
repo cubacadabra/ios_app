@@ -29,8 +29,6 @@ void engine_set_input(
     float look_y,
     float zoom_delta
 );
-void engine_set_reduced_effects(CubacadabraEngine *engine, uint8_t reduced);
-void engine_trigger_local_wave(CubacadabraEngine *engine);
 void engine_set_ui_viewport(
     CubacadabraEngine *engine,
     float width,
@@ -41,7 +39,6 @@ void engine_set_ui_viewport(
     float safe_bottom,
     float safe_left
 );
-void engine_set_ui_suppressed(CubacadabraEngine *engine, uint8_t suppressed);
 void engine_set_authenticated(CubacadabraEngine *engine, uint8_t authenticated);
 uint8_t *engine_ui_document_buffer_ptr(CubacadabraEngine *engine, uintptr_t length);
 uint8_t engine_load_ui_document_buffer(CubacadabraEngine *engine);
@@ -58,7 +55,6 @@ uintptr_t engine_ui_event_len(const CubacadabraEngine *engine);
 uintptr_t engine_ui_node_count(const CubacadabraEngine *engine);
 void engine_step(CubacadabraEngine *engine, float delta);
 void engine_reset_view(CubacadabraEngine *engine);
-void engine_reset_showcase_view(CubacadabraEngine *engine);
 void engine_reconcile_player(
     CubacadabraEngine *engine,
     float x,

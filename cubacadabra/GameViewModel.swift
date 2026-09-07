@@ -127,10 +127,6 @@ final class GameViewModel: ObservableObject {
     private var connectedWorldID: String?
     private var pendingSessionWorldID: String?
     private var gamePaused = false
-    private var characterLabActive = false
-    private var characterLabMotion = "idle"
-    private var characterLabJumpQueued = false
-    private var characterLabAppearanceRevision: UInt32 = 0
 
     init() {
         // iOS can retain Keychain credentials after an app is deleted. The
@@ -243,30 +239,20 @@ final class GameViewModel: ObservableObject {
         let delta = Float(min(max(date.timeIntervalSince(lastTick), 0), 0.05))
         self.lastTick = date
         syncRemotePlayers()
-        let labForward: Float = switch characterLabMotion {
-        case "walk": 1
-        case "run": 1
-        default: 0
-        }
         engine.setInput(
-            forward: characterLabActive ? labForward : (usernameEditorOpen ? 0 : forward),
+            forward: usernameEditorOpen ? 0 : forward,
             strafe: usernameEditorOpen ? 0 : strafe,
-            sprint: characterLabActive ? characterLabMotion == "run" : (usernameEditorOpen ? false : sprinting),
-            jump: characterLabActive ? characterLabJumpQueued : (usernameEditorOpen ? false : jumpQueued),
+            sprint: usernameEditorOpen ? false : sprinting,
+            jump: usernameEditorOpen ? false : jumpQueued,
             lookX: usernameEditorOpen ? 0 : lookX,
             lookY: usernameEditorOpen ? 0 : lookY,
             zoomDelta: usernameEditorOpen ? 0 : zoomDelta
         )
         jumpQueued = false
-        characterLabJumpQueued = false
         lookX = 0
         lookY = 0
         zoomDelta = 0
         engine.step(delta)
-        if characterLabActive {
-            frame = engine.frame()
-            return
-        }
         handleUIEvents()
         let nextFrame = engine.frame()
         updateSettingsRoomState(nextFrame.settingsRoomState)
@@ -613,72 +599,6 @@ final class GameViewModel: ObservableObject {
         gamePaused = false
         lastTick = nil
         connectWorld(worldID)
-    }
-
-    func beginCharacterLab() {
-        guard let engine else { return }
-        characterLabActive = true
-        gamePaused = false
-        lastTick = nil
-        forward = 0
-        strafe = 0
-        jumpQueued = false
-        lookX = 0
-        lookY = 0
-        zoomDelta = 0
-        characterLabMotion = "idle"
-        characterLabJumpQueued = false
-        characterLabAppearanceRevision = max(engine.appearanceRevision, 1)
-        remoteRosterDirty = true
-        engine.setReducedEffects(false)
-        engine.setUISuppressed(true)
-        engine.resetShowcaseView()
-        frame = engine.frame()
-    }
-
-    func endCharacterLab() {
-        guard characterLabActive else { return }
-        characterLabActive = false
-        characterLabMotion = "idle"
-        characterLabJumpQueued = false
-        remoteRosterDirty = true
-        engine?.setReducedEffects(false)
-        engine?.setUISuppressed(false)
-        pauseGame()
-    }
-
-    func setCharacterLabMotion(_ motion: String) {
-        guard characterLabActive else { return }
-        characterLabMotion = motion
-        if motion == "jump" {
-            characterLabJumpQueued = true
-        }
-    }
-
-    func triggerCharacterLabWave() {
-        guard characterLabActive else { return }
-        engine?.triggerLocalWave()
-    }
-
-    @discardableResult
-    func applyCharacterLabAppearance(body: String, face: String, outfit: String) -> UInt8 {
-        guard let engine else { return 0 }
-        characterLabAppearanceRevision = max(characterLabAppearanceRevision + 1, engine.appearanceRevision + 1)
-        let definition: [String: Any] = [
-            "version": 1,
-            "body": body,
-            "face": face,
-            "outfit": outfit,
-            "revision": characterLabAppearanceRevision,
-        ]
-        guard let data = try? JSONSerialization.data(withJSONObject: definition),
-              let source = String(data: data, encoding: .utf8) else { return 0 }
-        let status = engine.setLocalAppearance(source)
-        if status == 1 || status == 3 {
-            worldSocket.setAppearance(source)
-        }
-        frame = engine.frame()
-        return status
     }
 
     func pauseGame() {
@@ -1115,7 +1035,7 @@ final class GameViewModel: ObservableObject {
 
     private func syncRemotePlayers() {
         guard remoteRosterDirty, let engine else { return }
-        let players: [RemoteUpdatePlayer] = characterLabActive || worldID == "settings"
+        let players: [RemoteUpdatePlayer] = worldID == "settings"
             ? []
             : remotePlayers
                 .filter { !blockedPlayerIDs.contains($0.key) }
