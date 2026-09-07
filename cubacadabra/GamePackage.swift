@@ -17,8 +17,8 @@ struct GamePackageLoader {
 #if DEBUG
         // The Xcode build phase assembles the sibling game project into the
         // app bundle. Prefer that package during local development so a
-        // source edit is not hidden by a package cached from an earlier run.
-        if let bundledPackage = try? loadBundledPackage(for: gameID) { return bundledPackage }
+        // source edit or package error is not hidden by an earlier cache.
+        return try loadBundledPackage(for: gameID)
 #endif
         if let cachedPackage = cachedPackage(for: gameID) { return cachedPackage }
         if let bundledPackage = try? loadBundledPackage(for: gameID) { return bundledPackage }

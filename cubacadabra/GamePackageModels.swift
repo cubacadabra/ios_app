@@ -52,11 +52,38 @@ struct SceneDefinition: Decodable {
 }
 
 struct WorldDefinition: Decodable {
-    let scene: SceneDefinition
+    let scene: SceneDefinition?
     let palette: [String: String]
     let world: WorldSettings
     let launchPads: [LaunchPadDefinition]
     let blocks: [BlockDefinition]
+
+    init(
+        scene: SceneDefinition? = nil,
+        palette: [String: String] = [:],
+        world: WorldSettings = WorldSettings(),
+        launchPads: [LaunchPadDefinition] = [],
+        blocks: [BlockDefinition] = []
+    ) {
+        self.scene = scene
+        self.palette = palette
+        self.world = world
+        self.launchPads = launchPads
+        self.blocks = blocks
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        scene = try container.decodeIfPresent(SceneDefinition.self, forKey: .scene)
+        palette = try container.decodeIfPresent([String: String].self, forKey: .palette) ?? [:]
+        world = try container.decodeIfPresent(WorldSettings.self, forKey: .world) ?? WorldSettings()
+        launchPads = try container.decodeIfPresent([LaunchPadDefinition].self, forKey: .launchPads) ?? []
+        blocks = try container.decodeIfPresent([BlockDefinition].self, forKey: .blocks) ?? []
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case scene, palette, world, launchPads, blocks
+    }
 }
 
 struct WorldSettings: Decodable {
@@ -66,6 +93,22 @@ struct WorldSettings: Decodable {
     let spawn: [Float]
     let showSpawnPad: Bool
     let clouds: [[String: JSONValue]]
+
+    init(
+        groundSize: Float = 120,
+        gridSize: Float = 112,
+        gridDivisions: Int = 28,
+        spawn: [Float] = [0, 0, 0],
+        showSpawnPad: Bool = true,
+        clouds: [[String: JSONValue]] = []
+    ) {
+        self.groundSize = groundSize
+        self.gridSize = gridSize
+        self.gridDivisions = gridDivisions
+        self.spawn = spawn
+        self.showSpawnPad = showSpawnPad
+        self.clouds = clouds
+    }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
