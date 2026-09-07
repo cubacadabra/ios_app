@@ -12,11 +12,13 @@ struct AppAuthUser: Codable, Equatable {
     let name: String
     let dateOfBirth: String?
     let username: String?
+    let bodyID: String?
 
     enum CodingKeys: String, CodingKey {
         case id, email, name
         case dateOfBirth = "dob"
         case username
+        case bodyID = "body_id"
     }
 }
 
@@ -181,6 +183,10 @@ final class AppAuthenticationService: NSObject {
 
     func saveUsername(_ username: String) async throws -> AppProfileUpdateResult {
         try await updateProfile(path: "auth/username", body: ["username": username])
+    }
+
+    func saveAvatar(bodyID: String) async throws -> AppProfileUpdateResult {
+        try await updateProfile(path: "auth/avatar", body: ["body_id": bodyID])
     }
 
     private func exchange(code: String) async throws -> AppAuthResult {

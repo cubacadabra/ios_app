@@ -436,6 +436,16 @@ struct MainMenuView: View {
                     }
                     Divider().padding(.leading, 60)
                     NavigationLink {
+                        MorphSelectionView(model: model)
+                    } label: {
+                        menuRow(
+                            icon: "person.3",
+                            title: "Choose your morph",
+                            detail: MorphOption.option(for: model.authUser?.bodyID).label
+                        )
+                    }
+                    Divider().padding(.leading, 60)
+                    NavigationLink {
                         SafetyCenterView(model: model)
                     } label: {
                         menuRow(icon: "checkmark.shield", title: "Block or unblock players", detail: "Players & safety")

@@ -580,6 +580,12 @@ final class GameViewModel: ObservableObject {
         return result
     }
 
+    func saveMorph(_ bodyID: String) async throws -> AppProfileUpdateResult {
+        let result = try await authentication.saveAvatar(bodyID: bodyID)
+        authUser = result.user
+        return result
+    }
+
     private func applyProfileUpdate(_ result: AppProfileUpdateResult) {
         authUser = result.user
         guard let nextUsername = result.user.username, !nextUsername.isEmpty else { return }
