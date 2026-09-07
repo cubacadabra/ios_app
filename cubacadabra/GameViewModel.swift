@@ -53,6 +53,7 @@ final class GameViewModel: ObservableObject {
     let loader = GamePackageLoader()
     let authentication = AppAuthenticationService()
     let googleSignIn = NativeGoogleSignInService()
+    let gameAudio = GameAudio()
     let installationMarkerKey = "cubacadabra.installation-marker"
     let blockedPlayerIDsKey = "cubacadabra.blocked-player-ids"
     var engine: EngineBridge?
@@ -131,6 +132,7 @@ final class GameViewModel: ObservableObject {
                 throw GamePackageError.missingWorld(loadedPackage.initialWorld)
             }
             let loadedEngine = try makeEngine(from: loaded)
+            gameAudio.configure(with: loaded.audioAssets)
             runtimeWorldIDs = loadedPackage.runtimeWorldEntries().map(\.id)
             package = loadedPackage
             selectedGameID = "first-game"
@@ -162,6 +164,7 @@ final class GameViewModel: ObservableObject {
         worldSocket.disconnect()
         connectedWorldID = nil
         engine = nil
+        gameAudio.configure(with: [:])
         package = nil
         frame = nil
         hasEnteredGame = false
@@ -204,6 +207,7 @@ final class GameViewModel: ObservableObject {
         zoomDelta = 0
         engine.step(delta)
         flushNetworkMessages()
+        flushAudioMessages()
         handleUIEvents()
         let nextFrame = engine.frame()
         updateSettingsRoomState(nextFrame.settingsRoomState)
@@ -337,6 +341,7 @@ final class GameViewModel: ObservableObject {
         remotePlayerNames.removeAll()
         remoteSequence = 0
         remoteRosterDirty = true
+        gameAudio.configure(with: loaded.audioAssets)
         engine = nextEngine
         package = nextPackage
         selectedGameID = game.id
@@ -370,6 +375,7 @@ final class GameViewModel: ObservableObject {
 
     func pauseGame() {
         gamePaused = true
+        gameAudio.stopAll()
         lastTick = nil
         forward = 0
         strafe = 0
@@ -401,6 +407,18 @@ final class GameViewModel: ObservableObject {
             var payload: [String: Any] = ["channel": channel]
             if let value = object["payload"] { payload["payload"] = value }
             _ = worldSocket.sendExperience(retained ? "game_state_set" : "game_message", payload: payload)
+        }
+    }
+
+    private func flushAudioMessages() {
+        guard let engine else { return }
+        while let data = engine.pollAudioMessage() {
+            do {
+                let command = try JSONDecoder().decode(EngineAudioCommand.self, from: data)
+                gameAudio.play(command)
+            } catch {
+                gameLog.error("Discarding malformed Rust audio command: \(error.localizedDescription, privacy: .public)")
+            }
         }
     }
 

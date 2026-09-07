@@ -5,12 +5,15 @@ import SwiftUI
 struct GamePackageLoader {
     // The generated Luau package format changed with the Build Together UI.
     // Versioning these keys prevents an older cached script from overriding a
-    // corrected bundle on the first launch after an app update. Version 3
-    // also separates the new per-game bundled packages from older caches.
-    private static let cachedManifestKeyPrefix = "cubacadabra.cached-manifest.v3."
-    private static let cachedScriptKeyPrefix = "cubacadabra.cached-script.v3."
+    // corrected bundle on the first launch after an app update. Version 4
+    // separates per-game packages from older caches and prevents a pre-audio
+    // manifest from masking the bundled package after an app update.
+    private static let cachedManifestKeyPrefix = "cubacadabra.cached-manifest.v4."
+    private static let cachedScriptKeyPrefix = "cubacadabra.cached-script.v4."
     private static let maximumManifestBytes = 512_000
     private static let maximumScriptBytes = 512_000
+    private static let audioIDPattern = "^[A-Za-z0-9._-]{1,64}$"
+    private static let audioPathPattern = "^assets/(?:[A-Za-z0-9_-][A-Za-z0-9._-]*/)*[A-Za-z0-9_-][A-Za-z0-9._-]*\\.wav$"
 
     func load(gameID: String = "first-game") async throws -> LoadedGamePackage {
         guard Self.isValidGameID(gameID) else { throw GamePackageError.invalidGameID }
@@ -35,7 +38,12 @@ struct GamePackageLoader {
         guard let manifestData = try? await fetch(manifestURL, maximumBytes: Self.maximumManifestBytes),
               let scriptData = try? await fetch(scriptURL, maximumBytes: Self.maximumScriptBytes),
               let script = String(data: scriptData, encoding: .utf8),
-              (try? makePackage(manifestData: manifestData, script: script, expectedGameID: gameID)) != nil else { return }
+              (try? makePackage(
+                manifestData: manifestData,
+                script: script,
+                audioBaseURL: baseURL,
+                expectedGameID: gameID
+              )) != nil else { return }
         UserDefaults.standard.set(manifestData, forKey: Self.cachedManifestKeyPrefix + gameID)
         UserDefaults.standard.set(script, forKey: Self.cachedScriptKeyPrefix + gameID)
     }
@@ -45,7 +53,12 @@ struct GamePackageLoader {
         let manifestData = try await fetch(baseURL.appendingPathComponent("manifest.json"), maximumBytes: Self.maximumManifestBytes)
         let scriptData = try await fetch(baseURL.appendingPathComponent("game.luau"), maximumBytes: Self.maximumScriptBytes)
         guard let script = String(data: scriptData, encoding: .utf8) else { throw GamePackageError.invalidScript }
-        let loaded = try makePackage(manifestData: manifestData, script: script, expectedGameID: gameID)
+        let loaded = try makePackage(
+            manifestData: manifestData,
+            script: script,
+            audioBaseURL: baseURL,
+            expectedGameID: gameID
+        )
         UserDefaults.standard.set(manifestData, forKey: Self.cachedManifestKeyPrefix + gameID)
         UserDefaults.standard.set(script, forKey: Self.cachedScriptKeyPrefix + gameID)
         return loaded
@@ -70,12 +83,22 @@ struct GamePackageLoader {
 #if DEBUG
         NSLog("Cubacadabra using %@ package at %@", gameID, scriptURL.path)
 #endif
-        return try makePackage(manifestData: manifestData, script: script, expectedGameID: gameID)
+        return try makePackage(
+            manifestData: manifestData,
+            script: script,
+            audioBaseURL: manifestURL.deletingLastPathComponent(),
+            expectedGameID: gameID
+        )
     }
 
     private func cachedPackage(for gameID: String) -> LoadedGamePackage? {
         guard let manifestData = cachedManifestData(for: gameID), let script = cachedScriptData(for: gameID) else { return nil }
-        return try? makePackage(manifestData: manifestData, script: script, expectedGameID: gameID)
+        return try? makePackage(
+            manifestData: manifestData,
+            script: script,
+            audioBaseURL: remoteBaseURL(for: gameID),
+            expectedGameID: gameID
+        )
     }
 
     private func cachedManifestData(for gameID: String) -> Data? {
@@ -88,7 +111,12 @@ struct GamePackageLoader {
         return script
     }
 
-    private func makePackage(manifestData: Data, script: String, expectedGameID: String? = nil) throws -> LoadedGamePackage {
+    private func makePackage(
+        manifestData: Data,
+        script: String,
+        audioBaseURL: URL,
+        expectedGameID: String? = nil
+    ) throws -> LoadedGamePackage {
         guard !script.isEmpty, script.utf8.count <= Self.maximumScriptBytes else { throw GamePackageError.invalidScript }
         guard manifestData.count <= Self.maximumManifestBytes, let manifest = String(data: manifestData, encoding: .utf8) else { throw GamePackageError.invalidBundledPackage }
         let package: GamePackage
@@ -99,7 +127,31 @@ struct GamePackageLoader {
            let manifestObject = try? JSONSerialization.jsonObject(with: manifestData) as? [String: Any],
            let manifestGameID = manifestObject["id"] as? String,
            manifestGameID != expectedGameID { throw GamePackageError.invalidGameID }
-        return LoadedGamePackage(package: package, manifest: manifest, script: script)
+        let audioAssets = try normalizedAudioAssets(package.assets?.audio, baseURL: audioBaseURL)
+        return LoadedGamePackage(package: package, manifest: manifest, script: script, audioAssets: audioAssets)
+    }
+
+    private func normalizedAudioAssets(
+        _ definitions: [String: GameAudioAssetDefinition]?,
+        baseURL: URL
+    ) throws -> [String: LoadedGameAudioAsset] {
+        try (definitions ?? [:]).reduce(into: [:]) { assets, entry in
+            let (id, definition) = entry
+            guard id.range(of: Self.audioIDPattern, options: .regularExpression) != nil else {
+                throw GamePackageError.invalidAudioAsset(id)
+            }
+            guard definition.path.range(
+                of: Self.audioPathPattern,
+                options: [.regularExpression, .caseInsensitive]
+            ) != nil else {
+                throw GamePackageError.invalidAudioAsset(id)
+            }
+            guard definition.volume.isFinite, (0...1).contains(definition.volume),
+                  let url = URL(string: definition.path, relativeTo: baseURL)?.absoluteURL else {
+                throw GamePackageError.invalidAudioAsset(id)
+            }
+            assets[id] = LoadedGameAudioAsset(url: url, volume: definition.volume)
+        }
     }
 
     private func remoteBaseURL(for gameID: String) -> URL {
@@ -130,6 +182,7 @@ struct LoadedGamePackage {
     let package: GamePackage
     let manifest: String
     let script: String
+    let audioAssets: [String: LoadedGameAudioAsset]
 }
 
 extension Color {

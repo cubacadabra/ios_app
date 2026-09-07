@@ -144,6 +144,15 @@ final class EngineBridge {
         return Data(bytes: pointer, count: length)
     }
 
+    func pollAudioMessage() -> Data? {
+        guard engine_audio_poll_message(handle) != 0 else { return nil }
+        let length = Int(engine_audio_message_len(handle))
+        guard length > 0, let pointer = engine_audio_message_ptr(handle) else {
+            return Data()
+        }
+        return Data(bytes: pointer, count: length)
+    }
+
     func setInput(
         forward: Float,
         strafe: Float,

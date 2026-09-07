@@ -4,6 +4,7 @@ struct GamePackage: Decodable {
     let startWorld: String
     let lobby: Bool?
     let launch: LaunchRoute
+    let assets: GameAssets?
     let scene: SceneDefinition
     let palette: [String: String]
     let world: WorldSettings
@@ -29,6 +30,41 @@ struct GamePackage: Decodable {
         let lobby = worldDefinition(named: "lobby").map { [(id: "lobby", definition: $0)] } ?? []
         return lobby + worlds.keys.sorted().compactMap { id in worlds[id].map { (id: id, definition: $0) } }
     }
+}
+
+struct GameAssets: Decodable {
+    let audio: [String: GameAudioAssetDefinition]?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if container.contains(.audio) {
+            guard try !container.decodeNil(forKey: .audio) else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .audio,
+                    in: container,
+                    debugDescription: "Game manifest assets.audio must be an object."
+                )
+            }
+            audio = try container.decode([String: GameAudioAssetDefinition].self, forKey: .audio)
+        } else {
+            audio = nil
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey { case audio }
+}
+
+struct GameAudioAssetDefinition: Decodable {
+    let path: String
+    let volume: Float
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        path = try container.decode(String.self, forKey: .path)
+        volume = try container.decodeIfPresent(Float.self, forKey: .volume) ?? 1
+    }
+
+    private enum CodingKeys: String, CodingKey { case path, volume }
 }
 
 struct GameCatalogEntry: Identifiable, Equatable {
@@ -185,7 +221,9 @@ enum JSONValue: Decodable {
 }
 
 enum GamePackageError: LocalizedError {
-    case invalidURL, invalidGameID, httpFailure(Int), invalidScript, missingWorld(String), missingBundledPackage, invalidBundledPackage
+    case invalidURL, invalidGameID, httpFailure(Int), invalidScript
+    case missingWorld(String), missingBundledPackage, invalidBundledPackage
+    case invalidAudioAsset(String)
 
     var errorDescription: String? {
         switch self {
@@ -196,6 +234,7 @@ enum GamePackageError: LocalizedError {
         case .missingWorld(let id): return "The game world \"\(id)\" was not found."
         case .missingBundledPackage: return "The bundled first game could not be found."
         case .invalidBundledPackage: return "The bundled first game could not be opened."
+        case .invalidAudioAsset(let id): return "The game audio asset \"\(id)\" is invalid."
         }
     }
 }
