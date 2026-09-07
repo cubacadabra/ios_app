@@ -1,0 +1,13 @@
+{
+  "images" : [
+    {
+      "filename" : "player_girl_001.png",
+      "idiom" : "universal",
+      "scale" : "1x"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}
