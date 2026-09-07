@@ -1,255 +1,7 @@
 import Foundation
 import SwiftUI
 
-struct GamePackage: Decodable {
-    let startWorld: String
-    let lobby: Bool?
-    let launch: LaunchRoute
-    let scene: SceneDefinition
-    let palette: [String: String]
-    let world: WorldSettings
-    let launchPads: [LaunchPadDefinition]
-    let blocks: [BlockDefinition]
-    let worlds: [String: WorldDefinition]
-
-    var lobbyEnabled: Bool { lobby != false }
-
-    var initialWorld: String {
-        if lobbyEnabled || startWorld != "lobby" {
-            return startWorld
-        }
-        return launch.destinationWorld
-    }
-
-    func worldDefinition(named id: String) -> WorldDefinition? {
-        if id == "lobby" {
-            return WorldDefinition(
-                scene: scene,
-                palette: palette,
-                world: world,
-                launchPads: launchPads,
-                blocks: blocks
-            )
-        }
-        return worlds[id]
-    }
-
-    func runtimeWorldEntries() -> [(id: String, definition: WorldDefinition)] {
-        let lobby = worldDefinition(named: "lobby").map { [(id: "lobby", definition: $0)] } ?? []
-        return lobby + worlds.keys.sorted().compactMap { id in
-            worlds[id].map { (id: id, definition: $0) }
-        }
-    }
-}
-
-struct GameCatalogEntry: Identifiable, Equatable {
-    let id: String
-    let title: String
-    let subtitle: String
-
-    static let available = [
-        GameCatalogEntry(
-            id: "first-game",
-            title: "First Game",
-            subtitle: "Build together in the clearing"
-        ),
-        GameCatalogEntry(
-            id: "second-game",
-            title: "Second Game",
-            subtitle: "Drop signals in the relay yard"
-        ),
-    ]
-}
-
-struct LaunchRoute: Decodable {
-    let destinationWorld: String
-}
-
-struct SceneDefinition: Decodable {
-    let eyebrow: String
-    let title: String
-    let description: String
-    let maxPlayers: Int
-}
-
-struct WorldDefinition: Decodable {
-    let scene: SceneDefinition
-    let palette: [String: String]
-    let world: WorldSettings
-    let launchPads: [LaunchPadDefinition]
-    let blocks: [BlockDefinition]
-}
-
-struct WorldSettings: Decodable {
-    let groundSize: Float
-    let gridSize: Float
-    let gridDivisions: Int
-    let spawn: [Float]
-    let showSpawnPad: Bool
-    let clouds: [[String: JSONValue]]
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        groundSize = try container.decodeIfPresent(Float.self, forKey: .groundSize) ?? 120
-        gridSize = try container.decodeIfPresent(Float.self, forKey: .gridSize) ?? 112
-        gridDivisions = try container.decodeIfPresent(Int.self, forKey: .gridDivisions) ?? 28
-        spawn = try container.decodeIfPresent([Float].self, forKey: .spawn) ?? [0, 0, 0]
-        showSpawnPad = try container.decodeIfPresent(Bool.self, forKey: .showSpawnPad) ?? true
-        clouds = try container.decodeIfPresent([[String: JSONValue]].self, forKey: .clouds) ?? []
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case groundSize, gridSize, gridDivisions, spawn, showSpawnPad, clouds
-    }
-}
-
-struct LaunchPadDefinition: Decodable, Identifiable {
-    let id: String
-    let code: String
-    let label: String
-    let position: [Float]
-    let color: String
-    let radius: Float
-    let countdown: Float
-    let destinationWorld: String?
-    let enabled: Bool
-    let availabilityLabel: String
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(String.self, forKey: .id)
-        code = try container.decode(String.self, forKey: .code)
-        label = try container.decode(String.self, forKey: .label)
-        position = try container.decode([Float].self, forKey: .position)
-        color = try container.decode(String.self, forKey: .color)
-        radius = try container.decodeIfPresent(Float.self, forKey: .radius) ?? 2.7
-        countdown = try container.decodeIfPresent(Float.self, forKey: .countdown) ?? 8
-        destinationWorld = try container.decodeIfPresent(String.self, forKey: .destinationWorld)
-        enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
-        availabilityLabel = try container.decodeIfPresent(String.self, forKey: .availabilityLabel) ?? "COMING SOON"
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case id, code, label, position, color, radius, countdown, destinationWorld, enabled, availabilityLabel
-    }
-}
-
-struct BlockDefinition: Decodable {
-    let position: [Float]
-    let size: [Float]
-    let color: String
-    let outline: Bool
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        position = try container.decode([Float].self, forKey: .position)
-        size = try container.decode([Float].self, forKey: .size)
-        color = try container.decode(String.self, forKey: .color)
-        outline = try container.decodeIfPresent(Bool.self, forKey: .outline) ?? true
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case position, size, color, outline
-    }
-}
-
-enum JSONValue: Decodable {
-    case string(String)
-    case number(Double)
-    case bool(Bool)
-    case object([String: JSONValue])
-    case array([JSONValue])
-    case null
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if container.decodeNil() { self = .null }
-        else if let value = try? container.decode(String.self) { self = .string(value) }
-        else if let value = try? container.decode(Double.self) { self = .number(value) }
-        else if let value = try? container.decode(Bool.self) { self = .bool(value) }
-        else if let value = try? container.decode([String: JSONValue].self) { self = .object(value) }
-        else if let value = try? container.decode([JSONValue].self) { self = .array(value) }
-        else { throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unsupported JSON value") }
-    }
-}
-
-enum GamePackageError: LocalizedError {
-    case invalidURL
-    case invalidGameID
-    case httpFailure(Int)
-    case invalidScript
-    case missingWorld(String)
-    case missingBundledPackage
-    case invalidBundledPackage
-
-    var errorDescription: String? {
-        switch self {
-        case .invalidURL: return "The game package URL is invalid."
-        case .invalidGameID: return "That game could not be opened."
-        case .httpFailure(let status): return "The game package server returned HTTP \(status)."
-        case .invalidScript: return "The game script was not valid UTF-8."
-        case .missingWorld(let id): return "The game world \"\(id)\" was not found."
-        case .missingBundledPackage: return "The bundled first game could not be found."
-        case .invalidBundledPackage: return "The bundled first game could not be opened."
-        }
-    }
-}
-
-enum ClientConfiguration {
-#if DEBUG
-    private static let defaultBackendURL = "ws://localhost:8787"
-    private static let defaultGameBaseURL = "http://localhost:5173/games/first-game/"
-    private static let defaultLoginURL = "http://localhost:5173/login/"
-#else
-    private static let defaultBackendURL = "wss://api.cubacadabra.com"
-    private static let defaultGameBaseURL = "https://cubacadabra.com/games/first-game/"
-    private static let defaultLoginURL = "https://cubacadabra.com/login/"
-#endif
-
-    static var backendURL: URL {
-        configuredURL(forKey: "CUBACADABRA_BACKEND_URL", fallback: defaultBackendURL)
-    }
-
-    static var gameBaseURL: URL {
-        configuredURL(forKey: "CUBACADABRA_GAME_BASE_URL", fallback: defaultGameBaseURL)
-    }
-
-    static var backendAPIURL: URL {
-        var components = URLComponents(url: backendURL, resolvingAgainstBaseURL: false)!
-        components.scheme = components.scheme == "wss" ? "https" : "http"
-        return components.url!
-    }
-
-    static var loginURL: URL {
-        URL(string: defaultLoginURL)!
-    }
-
-    static let authCallbackURL = URL(string: "cubacadabra://auth/callback")!
-
-    private static func configuredURL(forKey key: String, fallback: String) -> URL {
-        if let configured = ProcessInfo.processInfo.environment[key],
-           let url = URL(string: configured),
-           url.scheme != nil,
-           url.host != nil {
-            return url
-        }
-        return URL(string: fallback)!
-    }
-}
-
-enum AppLinks {
-#if DEBUG
-    static let about = URL(string: "http://localhost:5173/about/")!
-    static let privacy = URL(string: "http://localhost:5173/privacy/")!
-    static let terms = URL(string: "http://localhost:5173/terms/")!
-#else
-    static let about = URL(string: "https://cubacadabra.com/about/")!
-    static let privacy = URL(string: "https://cubacadabra.com/privacy/")!
-    static let terms = URL(string: "https://cubacadabra.com/terms/")!
-#endif
-    static let support = URL(string: "mailto:support@cubacadabra.com?subject=Cubacadabra%20safety%20report")!
-}
-
+/// Loads a validated game manifest and script from cache, bundle, or the host.
 struct GamePackageLoader {
     // The generated Luau package format changed with the Build Together UI.
     // Versioning these keys prevents an older cached script from overriding a
@@ -262,15 +14,8 @@ struct GamePackageLoader {
 
     func load(gameID: String = "first-game") async throws -> LoadedGamePackage {
         guard Self.isValidGameID(gameID) else { throw GamePackageError.invalidGameID }
-
-        if let cachedPackage = cachedPackage(for: gameID) {
-            return cachedPackage
-        }
-
-        if let bundledPackage = try? loadBundledPackage(for: gameID) {
-            return bundledPackage
-        }
-
+        if let cachedPackage = cachedPackage(for: gameID) { return cachedPackage }
+        if let bundledPackage = try? loadBundledPackage(for: gameID) { return bundledPackage }
         return try await fetchPackage(for: gameID)
     }
 
@@ -284,26 +29,16 @@ struct GamePackageLoader {
         guard let manifestData = try? await fetch(manifestURL, maximumBytes: Self.maximumManifestBytes),
               let scriptData = try? await fetch(scriptURL, maximumBytes: Self.maximumScriptBytes),
               let script = String(data: scriptData, encoding: .utf8),
-              (try? makePackage(manifestData: manifestData, script: script, expectedGameID: gameID)) != nil else {
-            return
-        }
+              (try? makePackage(manifestData: manifestData, script: script, expectedGameID: gameID)) != nil else { return }
         UserDefaults.standard.set(manifestData, forKey: Self.cachedManifestKeyPrefix + gameID)
         UserDefaults.standard.set(script, forKey: Self.cachedScriptKeyPrefix + gameID)
     }
 
     private func fetchPackage(for gameID: String) async throws -> LoadedGamePackage {
         let baseURL = remoteBaseURL(for: gameID)
-        let manifestData = try await fetch(
-            baseURL.appendingPathComponent("manifest.json"),
-            maximumBytes: Self.maximumManifestBytes
-        )
-        let scriptData = try await fetch(
-            baseURL.appendingPathComponent("game.luau"),
-            maximumBytes: Self.maximumScriptBytes
-        )
-        guard let script = String(data: scriptData, encoding: .utf8) else {
-            throw GamePackageError.invalidScript
-        }
+        let manifestData = try await fetch(baseURL.appendingPathComponent("manifest.json"), maximumBytes: Self.maximumManifestBytes)
+        let scriptData = try await fetch(baseURL.appendingPathComponent("game.luau"), maximumBytes: Self.maximumScriptBytes)
+        guard let script = String(data: scriptData, encoding: .utf8) else { throw GamePackageError.invalidScript }
         let loaded = try makePackage(manifestData: manifestData, script: script, expectedGameID: gameID)
         UserDefaults.standard.set(manifestData, forKey: Self.cachedManifestKeyPrefix + gameID)
         UserDefaults.standard.set(script, forKey: Self.cachedScriptKeyPrefix + gameID)
@@ -311,25 +46,14 @@ struct GamePackageLoader {
     }
 
     private func loadBundledPackage(for gameID: String) throws -> LoadedGamePackage {
-        let manifestURL = Bundle.main.url(
-            forResource: "manifest-\(gameID)",
-            withExtension: "json",
-        ) ?? (gameID == "first-game"
-            ? Bundle.main.url(forResource: "manifest", withExtension: "json")
-            : nil)
-        let scriptURL = Bundle.main.url(
-            forResource: "game-\(gameID)",
-            withExtension: "luau",
-        ) ?? (gameID == "first-game"
-            ? Bundle.main.url(forResource: "game", withExtension: "luau")
-            : nil)
-        guard let manifestURL,
-              let scriptURL,
+        let manifestURL = Bundle.main.url(forResource: "manifest-\(gameID)", withExtension: "json")
+            ?? (gameID == "first-game" ? Bundle.main.url(forResource: "manifest", withExtension: "json") : nil)
+        let scriptURL = Bundle.main.url(forResource: "game-\(gameID)", withExtension: "luau")
+            ?? (gameID == "first-game" ? Bundle.main.url(forResource: "game", withExtension: "luau") : nil)
+        guard let manifestURL, let scriptURL,
               let manifestData = try? Data(contentsOf: manifestURL),
               let scriptData = try? Data(contentsOf: scriptURL),
-              let script = String(data: scriptData, encoding: .utf8) else {
-            throw GamePackageError.missingBundledPackage
-        }
+              let script = String(data: scriptData, encoding: .utf8) else { throw GamePackageError.missingBundledPackage }
 #if DEBUG
         NSLog("Cubacadabra using %@ package at %@", gameID, scriptURL.path)
 #endif
@@ -337,46 +61,31 @@ struct GamePackageLoader {
     }
 
     private func cachedPackage(for gameID: String) -> LoadedGamePackage? {
-        guard let manifestData = cachedManifestData(for: gameID),
-              let script = cachedScriptData(for: gameID) else { return nil }
+        guard let manifestData = cachedManifestData(for: gameID), let script = cachedScriptData(for: gameID) else { return nil }
         return try? makePackage(manifestData: manifestData, script: script, expectedGameID: gameID)
     }
 
     private func cachedManifestData(for gameID: String) -> Data? {
-        guard let data = UserDefaults.standard.data(forKey: Self.cachedManifestKeyPrefix + gameID),
-              data.count <= Self.maximumManifestBytes else { return nil }
+        guard let data = UserDefaults.standard.data(forKey: Self.cachedManifestKeyPrefix + gameID), data.count <= Self.maximumManifestBytes else { return nil }
         return data
     }
 
     private func cachedScriptData(for gameID: String) -> String? {
-        guard let script = UserDefaults.standard.string(forKey: Self.cachedScriptKeyPrefix + gameID),
-              script.utf8.count <= Self.maximumScriptBytes else { return nil }
+        guard let script = UserDefaults.standard.string(forKey: Self.cachedScriptKeyPrefix + gameID), script.utf8.count <= Self.maximumScriptBytes else { return nil }
         return script
     }
 
     private func makePackage(manifestData: Data, script: String, expectedGameID: String? = nil) throws -> LoadedGamePackage {
-        guard !script.isEmpty, script.utf8.count <= Self.maximumScriptBytes else {
-            throw GamePackageError.invalidScript
-        }
-        guard manifestData.count <= Self.maximumManifestBytes,
-              let manifest = String(data: manifestData, encoding: .utf8) else {
-            throw GamePackageError.invalidBundledPackage
-        }
+        guard !script.isEmpty, script.utf8.count <= Self.maximumScriptBytes else { throw GamePackageError.invalidScript }
+        guard manifestData.count <= Self.maximumManifestBytes, let manifest = String(data: manifestData, encoding: .utf8) else { throw GamePackageError.invalidBundledPackage }
         let package: GamePackage
-        do {
-            package = try JSONDecoder().decode(GamePackage.self, from: manifestData)
-        } catch {
-            throw GamePackageError.invalidBundledPackage
-        }
-        guard package.worldDefinition(named: package.initialWorld) != nil else {
-            throw GamePackageError.missingWorld(package.initialWorld)
-        }
+        do { package = try JSONDecoder().decode(GamePackage.self, from: manifestData) }
+        catch { throw GamePackageError.invalidBundledPackage }
+        guard package.worldDefinition(named: package.initialWorld) != nil else { throw GamePackageError.missingWorld(package.initialWorld) }
         if let expectedGameID,
            let manifestObject = try? JSONSerialization.jsonObject(with: manifestData) as? [String: Any],
            let manifestGameID = manifestObject["id"] as? String,
-           manifestGameID != expectedGameID {
-            throw GamePackageError.invalidGameID
-        }
+           manifestGameID != expectedGameID { throw GamePackageError.invalidGameID }
         return LoadedGamePackage(package: package, manifest: manifest, script: script)
     }
 
@@ -399,9 +108,7 @@ struct GamePackageLoader {
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw GamePackageError.httpFailure((response as? HTTPURLResponse)?.statusCode ?? 0)
         }
-        guard data.count <= maximumBytes else {
-            throw GamePackageError.invalidBundledPackage
-        }
+        guard data.count <= maximumBytes else { throw GamePackageError.invalidBundledPackage }
         return data
     }
 }
@@ -416,10 +123,6 @@ extension Color {
     init(hex: String) {
         let cleaned = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
         let value = UInt64(cleaned, radix: 16) ?? 0xffffff
-        self.init(
-            red: Double((value >> 16) & 0xff) / 255,
-            green: Double((value >> 8) & 0xff) / 255,
-            blue: Double(value & 0xff) / 255
-        )
+        self.init(red: Double((value >> 16) & 0xff) / 255, green: Double((value >> 8) & 0xff) / 255, blue: Double(value & 0xff) / 255)
     }
 }
