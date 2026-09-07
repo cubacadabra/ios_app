@@ -380,6 +380,29 @@ final class WorldSocketClient {
     func sendExperience(_ type: String, payload: [String: Any] = [:]) -> ExperienceSendResult {
         var message: [String: Any] = ["type": type]
         payload.forEach { message[$0.key] = $0.value }
+        return sendJSONMessage(message)
+    }
+
+    @discardableResult
+    func sendGameMessage(
+        _ type: String,
+        channel: String,
+        payload: Any,
+        expectedSequence: Int? = nil
+    ) -> ExperienceSendResult {
+        var message: [String: Any] = [
+            "type": type,
+            "channel": channel,
+            "payload": payload,
+        ]
+        if let expectedSequence {
+            guard expectedSequence >= 0 else { return .invalid }
+            message["expectedSequence"] = expectedSequence
+        }
+        return sendJSONMessage(message)
+    }
+
+    private func sendJSONMessage(_ message: [String: Any]) -> ExperienceSendResult {
         guard JSONSerialization.isValidJSONObject(message),
               let data = try? JSONSerialization.data(withJSONObject: message),
               let text = String(data: data, encoding: .utf8) else { return .invalid }

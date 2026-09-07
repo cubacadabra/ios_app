@@ -404,9 +404,21 @@ final class GameViewModel: ObservableObject {
             guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let channel = object["channel"] as? String else { continue }
             let retained = object["retained"] as? Bool ?? false
-            var payload: [String: Any] = ["channel": channel]
-            if let value = object["payload"] { payload["payload"] = value }
-            _ = worldSocket.sendExperience(retained ? "game_state_set" : "game_message", payload: payload)
+            let expectedSequence = (object["expectedSequence"] as? NSNumber).flatMap { number -> Int? in
+                guard !(object["expectedSequence"] is Bool) else { return nil }
+                let value = number.int64Value
+                guard value >= 0, Double(value) == number.doubleValue else { return nil }
+                return Int(value)
+            }
+            let type = expectedSequence != nil
+                ? "game_state_compare_set"
+                : retained ? "game_state_set" : "game_message"
+            _ = worldSocket.sendGameMessage(
+                type,
+                channel: channel,
+                payload: object["payload"] ?? NSNull(),
+                expectedSequence: expectedSequence
+            )
         }
     }
 
