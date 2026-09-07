@@ -4,10 +4,9 @@ import SwiftUI
 /// Loads a validated game manifest and script from cache, bundle, or the host.
 struct GamePackageLoader {
     // The generated Luau package format changed with the Build Together UI.
-    // Versioning these keys prevents an older cached script from overriding a
-    // corrected bundle on the first launch after an app update. Version 4
-    // separates per-game packages from older caches and prevents a pre-audio
-    // manifest from masking the bundled package after an app update.
+    // Versioning these keys separates per-game packages from older caches.
+    // Release selection below also keeps an equal-version cache from masking
+    // the package shipped in a newer app build.
     private static let cachedManifestKeyPrefix = "cubacadabra.cached-manifest.v4."
     private static let cachedScriptKeyPrefix = "cubacadabra.cached-script.v4."
     private static let maximumManifestBytes = 512_000
@@ -22,10 +21,21 @@ struct GamePackageLoader {
         // app bundle. Prefer that package during local development so a
         // source edit or package error is not hidden by an earlier cache.
         return try loadBundledPackage(for: gameID)
-#endif
-        if let cachedPackage = cachedPackage(for: gameID) { return cachedPackage }
-        if let bundledPackage = try? loadBundledPackage(for: gameID) { return bundledPackage }
+#else
+        let bundled = try? loadBundledPackage(for: gameID)
+        let cached = cachedPackage(for: gameID)
+        if let bundled {
+            guard let cached,
+                  let cachedVersion = cached.version,
+                  let bundledVersion = bundled.version,
+                  cachedVersion > bundledVersion else {
+                return bundled
+            }
+            return cached
+        }
+        if let cached { return cached }
         return try await fetchPackage(for: gameID)
+#endif
     }
 
     /// Refreshes the validated package for the next launch. The bundled
@@ -123,12 +133,19 @@ struct GamePackageLoader {
         do { package = try JSONDecoder().decode(GamePackage.self, from: manifestData) }
         catch { throw GamePackageError.invalidBundledPackage }
         guard package.worldDefinition(named: package.initialWorld) != nil else { throw GamePackageError.missingWorld(package.initialWorld) }
+        let manifestObject = try? JSONSerialization.jsonObject(with: manifestData) as? [String: Any]
         if let expectedGameID,
-           let manifestObject = try? JSONSerialization.jsonObject(with: manifestData) as? [String: Any],
+           let manifestObject,
            let manifestGameID = manifestObject["id"] as? String,
            manifestGameID != expectedGameID { throw GamePackageError.invalidGameID }
         let audioAssets = try normalizedAudioAssets(package.assets?.audio, baseURL: audioBaseURL)
-        return LoadedGamePackage(package: package, manifest: manifest, script: script, audioAssets: audioAssets)
+        return LoadedGamePackage(
+            package: package,
+            manifest: manifest,
+            script: script,
+            audioAssets: audioAssets,
+            version: GamePackageVersion(manifestObject?["version"] as? String)
+        )
     }
 
     private func normalizedAudioAssets(
@@ -183,6 +200,49 @@ struct LoadedGamePackage {
     let manifest: String
     let script: String
     let audioAssets: [String: LoadedGameAudioAsset]
+    let version: GamePackageVersion?
+}
+
+struct GamePackageVersion: Comparable {
+    let major: Int
+    let minor: Int
+    let patch: Int
+    let prerelease: String?
+
+    init?(_ source: String?) {
+        guard let source else { return nil }
+        let withoutBuild = source.split(separator: "+", maxSplits: 1)[0]
+        let versionParts = withoutBuild.split(
+            separator: "-",
+            maxSplits: 1,
+            omittingEmptySubsequences: false
+        )
+        let core = versionParts[0].split(separator: ".", omittingEmptySubsequences: false)
+        guard core.count == 3,
+              let major = Int(core[0]), major >= 0,
+              let minor = Int(core[1]), minor >= 0,
+              let patch = Int(core[2]), patch >= 0 else { return nil }
+        self.major = major
+        self.minor = minor
+        self.patch = patch
+        prerelease = versionParts.count == 2 ? String(versionParts[1]) : nil
+    }
+
+    static func < (left: Self, right: Self) -> Bool {
+        let leftCore = (left.major, left.minor, left.patch)
+        let rightCore = (right.major, right.minor, right.patch)
+        if leftCore != rightCore {
+            if left.major != right.major { return left.major < right.major }
+            if left.minor != right.minor { return left.minor < right.minor }
+            return left.patch < right.patch
+        }
+        switch (left.prerelease, right.prerelease) {
+        case (nil, nil): return false
+        case (nil, _): return false
+        case (_, nil): return true
+        case let (left?, right?): return left.localizedStandardCompare(right) == .orderedAscending
+        }
+    }
 }
 
 extension Color {

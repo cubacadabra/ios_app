@@ -50,6 +50,11 @@ then compiles the native engine for the selected iOS target and links the
 resulting static library. You do not need to build Rust separately for the
 normal Xcode workflow.
 
+Debug builds always load those bundled packages. Release builds prefer the
+bundle over an equal or older cached package; a remotely refreshed package is
+used on the next launch only when its manifest has a strictly newer semantic
+`version`. Game authors must bump that version when publishing package changes.
+
 ## Run on a physical device over the dev LAN
 
 Start both services on the Mac with LAN binding:
