@@ -111,6 +111,9 @@ final class GameViewModel: ObservableObject {
         },
         onExperience: { [weak self] event in
             self?.handleExperienceEvent(event)
+        },
+        onGameMessage: { [weak self] data in
+            self?.engine?.receiveNetworkMessage(data)
         }
     )
 
@@ -200,6 +203,7 @@ final class GameViewModel: ObservableObject {
         lookY = 0
         zoomDelta = 0
         engine.step(delta)
+        flushNetworkMessages()
         handleUIEvents()
         let nextFrame = engine.frame()
         updateSettingsRoomState(nextFrame.settingsRoomState)
@@ -386,6 +390,18 @@ final class GameViewModel: ObservableObject {
     func exitToHome() {
         disconnect()
         pauseGame()
+    }
+
+    private func flushNetworkMessages() {
+        guard let engine else { return }
+        while let data = engine.pollNetworkMessage() {
+            guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let channel = object["channel"] as? String else { continue }
+            let retained = object["retained"] as? Bool ?? false
+            var payload: [String: Any] = ["channel": channel]
+            if let value = object["payload"] { payload["payload"] = value }
+            _ = worldSocket.sendExperience(retained ? "game_state_set" : "game_message", payload: payload)
+        }
     }
 
     private func makeEngine(from loaded: LoadedGamePackage) throws -> EngineBridge {

@@ -127,6 +127,23 @@ final class EngineBridge {
         engine_reset_remote_session(handle)
     }
 
+    @discardableResult
+    func receiveNetworkMessage(_ data: Data) -> UInt8 {
+        data.withUnsafeBytes { rawBuffer in
+            let pointer = rawBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self)
+            return engine_receive_network_message_json(handle, pointer, UInt(data.count))
+        }
+    }
+
+    func pollNetworkMessage() -> Data? {
+        guard engine_network_poll_message(handle) != 0 else { return nil }
+        let length = Int(engine_network_message_len(handle))
+        guard length > 0, let pointer = engine_network_message_ptr(handle) else {
+            return Data()
+        }
+        return Data(bytes: pointer, count: length)
+    }
+
     func setInput(
         forward: Float,
         strafe: Float,

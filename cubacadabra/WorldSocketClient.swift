@@ -17,6 +17,7 @@ final class WorldSocketClient {
     private let onMove: (WorldMovementEvent) -> Void
     private let onUsername: (WorldUsernameEvent) -> Void
     private let onExperience: (WorldExperienceEvent) -> Void
+    private let onGameMessage: (Data) -> Void
     private var socketTask: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var reconnectTask: Task<Void, Never>?
@@ -38,7 +39,8 @@ final class WorldSocketClient {
         onSession: @escaping (WorldSessionEvent) -> Void,
         onMove: @escaping (WorldMovementEvent) -> Void,
         onUsername: @escaping (WorldUsernameEvent) -> Void,
-        onExperience: @escaping (WorldExperienceEvent) -> Void
+        onExperience: @escaping (WorldExperienceEvent) -> Void,
+        onGameMessage: @escaping (Data) -> Void
     ) {
         playerID = Self.loadPlayerID()
         username = Self.loadUsername(for: playerID)
@@ -50,6 +52,7 @@ final class WorldSocketClient {
         self.onMove = onMove
         self.onUsername = onUsername
         self.onExperience = onExperience
+        self.onGameMessage = onGameMessage
     }
 
     func connect(worldID nextWorldID: String) {
@@ -222,6 +225,10 @@ final class WorldSocketClient {
                 blockCount: event.blocks?.count,
                 blocks: event.blocks ?? []
             ))
+            return
+        }
+        if event.type == "game_state" || event.type == "game_message" {
+            onGameMessage(data)
             return
         }
         guard event.type == "player_join"
