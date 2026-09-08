@@ -96,6 +96,7 @@ struct RustGameSurface: UIViewRepresentable {
         func draw(in view: MTKView) {
             guard !view.isPaused else { return }
             attachIfNeeded(to: view)
+            uploadPackageImagesIfNeeded()
             syncEngine()
             if let renderer { engine_renderer_draw(renderer) }
         }
@@ -144,9 +145,14 @@ struct RustGameSurface: UIViewRepresentable {
 
         private func uploadPackageImagesIfNeeded() {
             guard let renderer, let engine, packageImagesEngine !== engine else { return }
-            packageImagesEngine = engine
-            if !engine.uploadPackageImageAtlas(to: renderer) {
+            NSLog("Cubacadabra uploading package image atlas to Metal renderer")
+            let uploaded = engine.uploadPackageImageAtlas(to: renderer)
+            if !uploaded {
                 rustSurfaceLog.error("Package image atlas upload failed")
+                NSLog("Cubacadabra package image atlas upload failed")
+            } else {
+                packageImagesEngine = engine
+                NSLog("Cubacadabra package image atlas upload succeeded")
             }
         }
     }

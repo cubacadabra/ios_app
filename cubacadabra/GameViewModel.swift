@@ -444,6 +444,11 @@ final class GameViewModel: ObservableObject {
     private func makeEngine(from loaded: LoadedGamePackage) throws -> EngineBridge {
         let loadedEngine = try EngineBridge()
         let imageAtlas = try GameImageAtlasBuilder.make(from: loaded.imageAssets)
+        NSLog(
+            "Cubacadabra image atlas: imageCount=%ld atlas=%@",
+            loaded.imageAssets.count,
+            imageAtlas.map { "\($0.width)x\($0.height)" } ?? "<none>"
+        )
         loadedEngine.setPackageImageAtlas(imageAtlas)
         do {
             try loadedEngine.loadPackage(loaded.manifest)

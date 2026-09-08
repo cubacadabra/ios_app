@@ -38,12 +38,27 @@ struct CubeCatalogService {
         ]
         guard let url = components?.url else { throw GamePackageError.invalidURL }
 
+        NSLog("Cubacadabra cube catalog request: %@", url.absoluteString)
+
         var request = URLRequest(url: url)
         request.timeoutInterval = 10
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            NSLog("Cubacadabra cube catalog network error: %@", error.localizedDescription)
+            throw error
+        }
+        NSLog(
+            "Cubacadabra cube catalog response: status=%ld bytes=%ld",
+            (response as? HTTPURLResponse)?.statusCode ?? 0,
+            data.count
+        )
         guard let http = response as? HTTPURLResponse,
               (200..<300).contains(http.statusCode) else {
+            NSLog("Cubacadabra cube catalog HTTP failure: status=%ld", (response as? HTTPURLResponse)?.statusCode ?? 0)
             throw GamePackageError.httpFailure((response as? HTTPURLResponse)?.statusCode ?? 0)
         }
         guard data.count <= Self.maximumResponseBytes else {
@@ -54,8 +69,11 @@ struct CubeCatalogService {
         do {
             decoded = try JSONDecoder().decode(Response.self, from: data)
         } catch {
+            NSLog("Cubacadabra cube catalog decode error: %@", error.localizedDescription)
             throw GamePackageError.invalidBundledPackage
         }
+
+        NSLog("Cubacadabra cube catalog decoded: count=%ld", decoded.cubes.count)
 
         return try decoded.cubes.map { cube in
             let backendURL = ClientConfiguration.backendAPIURL
@@ -88,8 +106,20 @@ struct CubeCatalogService {
                   let packageURL = URL(string: packagePath, relativeTo: ClientConfiguration.backendAPIURL)?.absoluteURL,
                   isAllowedPackageURL(packageURL),
                   !packageURL.path.isEmpty else {
+                NSLog(
+                    "Cubacadabra rejected cube URL: id=%@ packagePath=%@ assetBaseURL=%@",
+                    cube.cubeID,
+                    cube.packagePath,
+                    cube.assetBaseURL ?? "<nil>"
+                )
                 throw GamePackageError.invalidGameID
             }
+            NSLog(
+                "Cubacadabra cube package URL: id=%@ version=%@ url=%@",
+                cube.cubeID,
+                cube.version,
+                packageURL.absoluteString
+            )
             return GameCatalogEntry(
                 id: cube.cubeID,
                 title: cube.displayName,

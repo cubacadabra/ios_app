@@ -21,6 +21,13 @@ struct GamePackageLoader {
 
     func load(gameID: String = "first-game", packageBaseURL: URL? = nil) async throws -> LoadedGamePackage {
         guard Self.isValidGameID(gameID) else { throw GamePackageError.invalidGameID }
+        NSLog(
+            "Cubacadabra package load: game=%@ requestedBase=%@ backend=%@ gameBase=%@",
+            gameID,
+            packageBaseURL?.absoluteString ?? "<nil>",
+            ClientConfiguration.backendURL.absoluteString,
+            ClientConfiguration.gameBaseURL(for: gameID).absoluteString
+        )
         if let packageBaseURL {
             return try await fetchPackage(for: gameID, baseURL: packageBaseURL, cache: false)
         }
@@ -68,8 +75,18 @@ struct GamePackageLoader {
     }
 
     private func fetchPackage(for gameID: String, baseURL: URL, cache: Bool) async throws -> LoadedGamePackage {
-        let manifestData = try await fetch(baseURL.appendingPathComponent("manifest.json"), maximumBytes: Self.maximumManifestBytes)
-        let scriptData = try await fetch(baseURL.appendingPathComponent("game.luau"), maximumBytes: Self.maximumScriptBytes)
+        let manifestURL = baseURL.appendingPathComponent("manifest.json")
+        let scriptURL = baseURL.appendingPathComponent("game.luau")
+        NSLog(
+            "Cubacadabra package fetch: game=%@ base=%@ manifest=%@ script=%@ cache=%@",
+            gameID,
+            baseURL.absoluteString,
+            manifestURL.absoluteString,
+            scriptURL.absoluteString,
+            cache ? "yes" : "no"
+        )
+        let manifestData = try await fetch(manifestURL, maximumBytes: Self.maximumManifestBytes)
+        let scriptData = try await fetch(scriptURL, maximumBytes: Self.maximumScriptBytes)
         guard let script = String(data: scriptData, encoding: .utf8) else { throw GamePackageError.invalidScript }
         let loaded = try makePackage(
             manifestData: manifestData,
@@ -78,6 +95,13 @@ struct GamePackageLoader {
             expectedGameID: gameID
         )
         let loadedPackage = try await loadImageAssets(from: loaded, baseURL: baseURL)
+        NSLog(
+            "Cubacadabra package loaded: game=%@ manifestBytes=%ld scriptBytes=%ld imageCount=%ld",
+            gameID,
+            manifestData.count,
+            scriptData.count,
+            loadedPackage.imageAssets.count
+        )
         if cache {
             UserDefaults.standard.set(manifestData, forKey: Self.cachedManifestKeyPrefix + gameID)
             UserDefaults.standard.set(script, forKey: Self.cachedScriptKeyPrefix + gameID)
@@ -193,21 +217,27 @@ struct GamePackageLoader {
         baseURL: URL
     ) async throws -> LoadedGamePackage {
         let definitions = try normalizedImageAssets(loaded.package.assets?.images, baseURL: baseURL)
+        NSLog("Cubacadabra image assets declared: count=%ld base=%@", definitions.count, baseURL.absoluteString)
         var imageAssets: [String: LoadedGameImageAsset] = [:]
         for entry in definitions {
             let (id, definition) = entry
             let data: Data
             if definition.url.isFileURL {
+                NSLog("Cubacadabra image asset read from bundle: id=%@ url=%@", id, definition.url.absoluteString)
                 guard let fileData = try? Data(contentsOf: definition.url) else {
+                    NSLog("Cubacadabra image asset bundle read failed: id=%@ url=%@", id, definition.url.absoluteString)
                     throw GamePackageError.invalidImageAsset(id)
                 }
                 data = fileData
                 guard data.count <= Self.maximumImageAssetBytes else {
+                    NSLog("Cubacadabra image asset too large: id=%@ bytes=%ld", id, data.count)
                     throw GamePackageError.invalidImageAsset(id)
                 }
             } else {
+                NSLog("Cubacadabra image asset fetch: id=%@ url=%@", id, definition.url.absoluteString)
                 data = try await fetch(definition.url, maximumBytes: Self.maximumImageAssetBytes)
             }
+            NSLog("Cubacadabra image asset loaded: id=%@ bytes=%ld", id, data.count)
             imageAssets[id] = LoadedGameImageAsset(data: data)
         }
         return LoadedGamePackage(
@@ -251,11 +281,30 @@ struct GamePackageLoader {
     private func fetch(_ url: URL, maximumBytes: Int) async throws -> Data {
         var request = URLRequest(url: url)
         request.timeoutInterval = 5
-        let (data, response) = try await URLSession.shared.data(for: request)
+        NSLog("Cubacadabra asset request: %@", url.absoluteString)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            NSLog("Cubacadabra asset network error: url=%@ error=%@", url.absoluteString, error.localizedDescription)
+            throw error
+        }
+        NSLog(
+            "Cubacadabra asset response: url=%@ status=%ld bytes=%ld contentType=%@",
+            url.absoluteString,
+            (response as? HTTPURLResponse)?.statusCode ?? 0,
+            data.count,
+            (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type") ?? "<nil>"
+        )
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            NSLog("Cubacadabra asset HTTP failure: url=%@ status=%ld", url.absoluteString, (response as? HTTPURLResponse)?.statusCode ?? 0)
             throw GamePackageError.httpFailure((response as? HTTPURLResponse)?.statusCode ?? 0)
         }
-        guard data.count <= maximumBytes else { throw GamePackageError.invalidBundledPackage }
+        guard data.count <= maximumBytes else {
+            NSLog("Cubacadabra asset exceeded byte limit: url=%@ bytes=%ld limit=%ld", url.absoluteString, data.count, maximumBytes)
+            throw GamePackageError.invalidBundledPackage
+        }
         return data
     }
 }
