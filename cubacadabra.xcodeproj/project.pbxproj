@@ -133,7 +133,7 @@
 			files = (
 			);
 			inputPaths = (
-				"$(SRCROOT)/../rust/Cargo.toml",
+				"$(SRCROOT)/$(RUST_REPO_PATH)/Cargo.toml",
 				"$(SRCROOT)/scripts/build_rust_engine.sh",
 				"$(SRCROOT)/cubacadabra/cubacadabra_engine.h",
 			);
@@ -343,6 +343,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.cubacadabra.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				RUST_REPO_PATH = "../rust";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -391,6 +392,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.cubacadabra.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				RUST_REPO_PATH = "../rust";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;

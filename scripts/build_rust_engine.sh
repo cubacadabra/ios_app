@@ -2,7 +2,12 @@
 set -eu
 
 project_dir="${PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
-manifest_path="$project_dir/../rust/Cargo.toml"
+rust_repo_path="${RUST_REPO_PATH:-../rust}"
+case "$rust_repo_path" in
+  /*) rust_repo_dir="$rust_repo_path" ;;
+  *) rust_repo_dir="$project_dir/$rust_repo_path" ;;
+esac
+manifest_path="$rust_repo_dir/Cargo.toml"
 output_dir="${DERIVED_FILE_DIR:-$project_dir/rust/build}/cubacadabra-engine"
 cargo_target_dir="${CARGO_TARGET_DIR:-${DERIVED_FILE_DIR:-$project_dir/rust/build}/rust-target}"
 rust_profile=debug
