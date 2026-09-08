@@ -46,6 +46,7 @@ final class GameViewModel: ObservableObject {
     @Published var isSelectingGame = false
     var isFreshInstall = false
     @Published var sprinting = false
+    @Published var climbing = false
 
     let loader = GamePackageLoader()
     let authentication = AppAuthenticationService()
@@ -195,6 +196,7 @@ final class GameViewModel: ObservableObject {
             strafe: usernameEditorOpen ? 0 : strafe,
             sprint: usernameEditorOpen ? false : sprinting,
             jump: usernameEditorOpen ? false : jumpQueued,
+            climb: usernameEditorOpen ? false : climbing,
             lookX: usernameEditorOpen ? 0 : lookX,
             lookY: usernameEditorOpen ? 0 : lookY,
             zoomDelta: usernameEditorOpen ? 0 : zoomDelta
@@ -284,6 +286,8 @@ final class GameViewModel: ObservableObject {
                 jump()
             case "player.run" where event.phase == "activate":
                 toggleSprinting()
+            case "player.climb" where event.phase == "activate":
+                climbing.toggle()
             case "hud.safety" where event.phase == "activate":
                 safetyRequestID &+= 1
             case "shared.about.open" where event.phase == "activate":

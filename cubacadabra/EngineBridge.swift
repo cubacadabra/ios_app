@@ -159,11 +159,12 @@ final class EngineBridge {
         strafe: Float,
         sprint: Bool,
         jump: Bool,
+        climb: Bool,
         lookX: Float = 0,
         lookY: Float = 0,
         zoomDelta: Float = 0
     ) {
-        engine_set_input(handle, forward, strafe, sprint ? 1 : 0, jump ? 1 : 0, lookX, lookY, zoomDelta)
+        engine_set_input(handle, forward, strafe, sprint ? 1 : 0, jump ? 1 : 0, climb ? 1 : 0, lookX, lookY, zoomDelta)
     }
 
     func setUIViewport(
