@@ -44,6 +44,7 @@ struct EngineFrame {
     var pads: [EnginePad]
     var camera: SIMD3<Float>
     var playerLaunchPad: Int
+    var playerRespawnEventID: UInt32
     var launchEventID: UInt32
     var lastLaunchPad: Int
     var lastLaunchOccupants: Int
@@ -327,6 +328,7 @@ final class EngineBridge {
                 engine_camera_distance(handle)
             ),
             playerLaunchPad: Int(engine_player_launch_pad(handle)),
+            playerRespawnEventID: engine_player_respawn_event_id(handle),
             launchEventID: engine_launch_event_id(handle),
             lastLaunchPad: Int(engine_last_launch_pad(handle)),
             lastLaunchOccupants: Int(engine_last_launch_occupants(handle)),

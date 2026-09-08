@@ -342,7 +342,8 @@ final class WorldSocketClient {
         position: SIMD3<Float>,
         yaw: Float,
         moving: Bool,
-        sprinting: Bool
+        sprinting: Bool,
+        respawnEventID: UInt32
     ) {
         guard !stopped,
               let socketTask,
@@ -352,7 +353,8 @@ final class WorldSocketClient {
             position: position,
             yaw: yaw,
             moving: moving,
-            sprinting: sprinting
+            sprinting: sprinting,
+            respawnEventID: respawnEventID
         )
         if let lastSentMove,
            !move.isMeaningfullyDifferent(from: lastSentMove) {
@@ -367,7 +369,8 @@ final class WorldSocketClient {
             z: position.z,
             yaw: yaw,
             moving: moving,
-            sprinting: sprinting
+            sprinting: sprinting,
+            respawnEventId: respawnEventID
         )
         guard let data = try? JSONEncoder().encode(message),
               let text = String(data: data, encoding: .utf8) else { return }
@@ -502,10 +505,12 @@ private struct SentMove {
     let yaw: Float
     let moving: Bool
     let sprinting: Bool
+    let respawnEventID: UInt32
 
     func isMeaningfullyDifferent(from previous: SentMove) -> Bool {
         moving != previous.moving
             || sprinting != previous.sprinting
+            || respawnEventID != previous.respawnEventID
             || abs(position.x - previous.position.x) > WorldSocketClient.movePositionEpsilon
             || abs(position.y - previous.position.y) > WorldSocketClient.movePositionEpsilon
             || abs(position.z - previous.position.z) > WorldSocketClient.movePositionEpsilon
@@ -561,6 +566,7 @@ private struct WorldMoveMessage: Encodable {
     let yaw: Float
     let moving: Bool
     let sprinting: Bool
+    let respawnEventId: UInt32
 }
 
 private struct WorldUsernameMessage: Encodable {

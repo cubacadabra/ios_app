@@ -224,7 +224,8 @@ final class GameViewModel: ObservableObject {
                 position: nextFrame.player.position,
                 yaw: nextFrame.player.yaw,
                 moving: nextFrame.player.moving,
-                sprinting: nextFrame.player.sprinting
+                sprinting: nextFrame.player.sprinting,
+                respawnEventID: nextFrame.playerRespawnEventID
             )
         }
     }
