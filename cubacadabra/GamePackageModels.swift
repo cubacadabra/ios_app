@@ -71,6 +71,27 @@ struct GameCatalogEntry: Identifiable, Equatable {
     let id: String
     let title: String
     let subtitle: String
+    let version: String?
+    let packageBaseURL: URL?
+
+    init(
+        id: String,
+        title: String,
+        subtitle: String,
+        version: String? = nil,
+        packageBaseURL: URL? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.subtitle = subtitle
+        self.version = version
+        self.packageBaseURL = packageBaseURL
+    }
+
+    var catalogID: String {
+        if let packageBaseURL { return "remote-\(packageBaseURL.absoluteString)" }
+        return id
+    }
 
     static let available = [
         GameCatalogEntry(id: "first-game", title: "First Game", subtitle: "Build together in the clearing"),

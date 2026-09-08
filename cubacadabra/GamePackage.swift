@@ -14,8 +14,11 @@ struct GamePackageLoader {
     private static let audioIDPattern = "^[A-Za-z0-9._-]{1,64}$"
     private static let audioPathPattern = "^assets/(?:[A-Za-z0-9_-][A-Za-z0-9._-]*/)*[A-Za-z0-9_-][A-Za-z0-9._-]*\\.wav$"
 
-    func load(gameID: String = "first-game") async throws -> LoadedGamePackage {
+    func load(gameID: String = "first-game", packageBaseURL: URL? = nil) async throws -> LoadedGamePackage {
         guard Self.isValidGameID(gameID) else { throw GamePackageError.invalidGameID }
+        if let packageBaseURL {
+            return try await fetchPackage(for: gameID, baseURL: packageBaseURL, cache: false)
+        }
 #if DEBUG
         // The Xcode build phase assembles the sibling game project into the
         // app bundle. Prefer that package during local development so a
@@ -34,7 +37,7 @@ struct GamePackageLoader {
             return cached
         }
         if let cached { return cached }
-        return try await fetchPackage(for: gameID)
+        return try await fetchPackage(for: gameID, baseURL: remoteBaseURL(for: gameID), cache: true)
 #endif
     }
 
@@ -58,8 +61,7 @@ struct GamePackageLoader {
         UserDefaults.standard.set(script, forKey: Self.cachedScriptKeyPrefix + gameID)
     }
 
-    private func fetchPackage(for gameID: String) async throws -> LoadedGamePackage {
-        let baseURL = remoteBaseURL(for: gameID)
+    private func fetchPackage(for gameID: String, baseURL: URL, cache: Bool) async throws -> LoadedGamePackage {
         let manifestData = try await fetch(baseURL.appendingPathComponent("manifest.json"), maximumBytes: Self.maximumManifestBytes)
         let scriptData = try await fetch(baseURL.appendingPathComponent("game.luau"), maximumBytes: Self.maximumScriptBytes)
         guard let script = String(data: scriptData, encoding: .utf8) else { throw GamePackageError.invalidScript }
@@ -69,8 +71,10 @@ struct GamePackageLoader {
             audioBaseURL: baseURL,
             expectedGameID: gameID
         )
-        UserDefaults.standard.set(manifestData, forKey: Self.cachedManifestKeyPrefix + gameID)
-        UserDefaults.standard.set(script, forKey: Self.cachedScriptKeyPrefix + gameID)
+        if cache {
+            UserDefaults.standard.set(manifestData, forKey: Self.cachedManifestKeyPrefix + gameID)
+            UserDefaults.standard.set(script, forKey: Self.cachedScriptKeyPrefix + gameID)
+        }
         return loaded
     }
 

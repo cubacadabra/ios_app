@@ -37,6 +37,12 @@ struct MainMenuView: View {
                         cubeRow(game)
                         if game.id != GameCatalogEntry.available.last?.id { Divider().padding(.leading, 60) }
                     }
+                    Divider().padding(.leading, 60)
+                    NavigationLink {
+                        MoreCubesView(model: model, openGame: openGame)
+                    } label: {
+                        menuRow(icon: "ellipsis.circle", title: "More", detail: "Browse uploaded cubes")
+                    }
                 }
                 .background(.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
 

@@ -42,13 +42,10 @@ final class GameViewModel: ObservableObject {
     @Published var buildActionNotice: String?
     @Published var hasEnteredGame = false
     @Published var selectedGameID = "first-game"
+    @Published var selectedGame = GameCatalogEntry.available[0]
     @Published var isSelectingGame = false
     var isFreshInstall = false
     @Published var sprinting = false
-
-    var selectedGame: GameCatalogEntry {
-        GameCatalogEntry.available.first { $0.id == selectedGameID } ?? GameCatalogEntry.available[0]
-    }
 
     let loader = GamePackageLoader()
     let authentication = AppAuthenticationService()
@@ -136,6 +133,7 @@ final class GameViewModel: ObservableObject {
             runtimeWorldIDs = loadedPackage.runtimeWorldEntries().map(\.id)
             package = loadedPackage
             selectedGameID = "first-game"
+            selectedGame = GameCatalogEntry.available[0]
             username = worldSocket.username
             loadedEngine.setUsername(username)
             engine = loadedEngine
@@ -323,13 +321,15 @@ final class GameViewModel: ObservableObject {
     }
 
     func selectGame(_ game: GameCatalogEntry) async throws {
-        guard GameCatalogEntry.available.contains(game) else { throw GamePackageError.invalidGameID }
-        guard selectedGameID != game.id || package == nil else { return }
+        guard game.packageBaseURL != nil || GameCatalogEntry.available.contains(where: { $0.id == game.id }) else {
+            throw GamePackageError.invalidGameID
+        }
+        guard selectedGame.catalogID != game.catalogID || package == nil else { return }
 
         isSelectingGame = true
         defer { isSelectingGame = false }
 
-        let loaded = try await loader.load(gameID: game.id)
+        let loaded = try await loader.load(gameID: game.id, packageBaseURL: game.packageBaseURL)
         let nextEngine = try makeEngine(from: loaded)
         let nextPackage = loaded.package
 
@@ -345,6 +345,7 @@ final class GameViewModel: ObservableObject {
         engine = nextEngine
         package = nextPackage
         selectedGameID = game.id
+        selectedGame = game
         runtimeWorldIDs = nextPackage.runtimeWorldEntries().map(\.id)
         frame = nextEngine.frame()
         worldID = runtimeWorldIDs[safe: frame?.activeWorldIndex ?? -1] ?? nextPackage.initialWorld
