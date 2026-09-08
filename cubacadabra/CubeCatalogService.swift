@@ -59,14 +59,35 @@ struct CubeCatalogService {
 
         return try decoded.cubes.map { cube in
             let backendURL = ClientConfiguration.backendAPIURL
+#if DEBUG
+            let packagePath = cube.packagePath
+#else
             let packagePath = cube.assetBaseURL ?? cube.packagePath
+#endif
+            let isBackendPackageURL = { (url: URL) in
+                url.scheme == backendURL.scheme
+                    && url.host == backendURL.host
+                    && url.path.hasPrefix("/cubes/")
+            }
+#if !DEBUG
+            let isPublicAssetURL = { (url: URL) in
+                url.scheme == "https"
+                    && url.host == ClientConfiguration.publicAssetHost
+                    && url.path.hasPrefix("/cubes/")
+            }
+#endif
+            let isAllowedPackageURL: (URL) -> Bool
+#if DEBUG
+            isAllowedPackageURL = isBackendPackageURL
+#else
+            isAllowedPackageURL = { url in isBackendPackageURL(url) || isPublicAssetURL(url) }
+#endif
             guard Self.isValidGameID(cube.cubeID),
                   cube.packagePath.hasPrefix("/cubes/"),
+                  packagePath.hasSuffix("/"),
                   let packageURL = URL(string: packagePath, relativeTo: ClientConfiguration.backendAPIURL)?.absoluteURL,
-                  packageURL.scheme == backendURL.scheme,
-                  ((packageURL.host == backendURL.host && packageURL.path.hasPrefix("/cubes/"))
-                   || (packageURL.host == ClientConfiguration.publicAssetHost && packageURL.path.hasPrefix("/cubes/"))),
-                  packageURL.path.hasSuffix("/") else {
+                  isAllowedPackageURL(packageURL),
+                  !packageURL.path.isEmpty else {
                 throw GamePackageError.invalidGameID
             }
             return GameCatalogEntry(
