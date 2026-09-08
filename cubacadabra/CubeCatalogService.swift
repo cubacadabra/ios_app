@@ -14,6 +14,7 @@ struct CubeCatalogService {
         let displayName: String
         let fileCount: Int
         let packagePath: String
+        let assetBaseURL: String?
 
         enum CodingKeys: String, CodingKey {
             case id
@@ -22,6 +23,7 @@ struct CubeCatalogService {
             case displayName
             case fileCount
             case packagePath
+            case assetBaseURL
         }
     }
 
@@ -57,13 +59,14 @@ struct CubeCatalogService {
 
         return try decoded.cubes.map { cube in
             let backendURL = ClientConfiguration.backendAPIURL
+            let packagePath = cube.assetBaseURL ?? cube.packagePath
             guard Self.isValidGameID(cube.cubeID),
                   cube.packagePath.hasPrefix("/cubes/"),
-                  let packageURL = URL(string: cube.packagePath, relativeTo: ClientConfiguration.backendAPIURL)?.absoluteURL,
+                  let packageURL = URL(string: packagePath, relativeTo: ClientConfiguration.backendAPIURL)?.absoluteURL,
                   packageURL.scheme == backendURL.scheme,
-                  packageURL.host == backendURL.host,
-                  packageURL.port == backendURL.port,
-                  packageURL.path.hasPrefix("/cubes/") else {
+                  ((packageURL.host == backendURL.host && packageURL.path.hasPrefix("/cubes/"))
+                   || (packageURL.host == ClientConfiguration.publicAssetHost && packageURL.path.hasPrefix("/cubes/"))),
+                  packageURL.path.hasSuffix("/") else {
                 throw GamePackageError.invalidGameID
             }
             return GameCatalogEntry(

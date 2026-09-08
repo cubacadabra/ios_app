@@ -241,11 +241,7 @@ struct GamePackageLoader {
     }
 
     private func remoteBaseURL(for gameID: String) -> URL {
-        var components = URLComponents(url: ClientConfiguration.gameBaseURL, resolvingAgainstBaseURL: false)
-        let path = components?.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")) ?? ""
-        let parentPath = path.split(separator: "/").dropLast().joined(separator: "/")
-        components?.path = "/" + (parentPath.isEmpty ? gameID : parentPath + "/" + gameID) + "/"
-        return components?.url ?? ClientConfiguration.gameBaseURL
+        ClientConfiguration.gameBaseURL(for: gameID)
     }
 
     private static func isValidGameID(_ gameID: String) -> Bool {

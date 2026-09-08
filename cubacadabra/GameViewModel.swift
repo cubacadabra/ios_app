@@ -124,7 +124,8 @@ final class GameViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
         do {
-            let loaded = try await loader.load(gameID: "first-game")
+            let firstGame = GameCatalogEntry.available[0]
+            let loaded = try await loader.load(gameID: firstGame.id, packageBaseURL: firstGame.packageBaseURL)
             let loadedPackage = loaded.package
             guard loadedPackage.worldDefinition(named: loadedPackage.initialWorld) != nil else {
                 throw GamePackageError.missingWorld(loadedPackage.initialWorld)
@@ -133,8 +134,8 @@ final class GameViewModel: ObservableObject {
             gameAudio.configure(with: loaded.audioAssets)
             runtimeWorldIDs = loadedPackage.runtimeWorldEntries().map(\.id)
             package = loadedPackage
-            selectedGameID = "first-game"
-            selectedGame = GameCatalogEntry.available[0]
+            selectedGameID = firstGame.id
+            selectedGame = firstGame
             username = worldSocket.username
             loadedEngine.setUsername(username)
             engine = loadedEngine

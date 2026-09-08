@@ -117,10 +117,22 @@ struct GameCatalogEntry: Identifiable, Equatable {
         return id
     }
 
-    static let available = [
-        GameCatalogEntry(id: "first-game", title: "First Game", subtitle: "Build together in the clearing"),
-        GameCatalogEntry(id: "second-game", title: "Second Game", subtitle: "Drop signals in the relay yard"),
-    ]
+    static var available: [GameCatalogEntry] {
+        [
+            GameCatalogEntry(
+                id: "first-game",
+                title: "First Game",
+                subtitle: "Build together in the clearing",
+                packageBaseURL: ClientConfiguration.gameBaseURL(for: "first-game")
+            ),
+            GameCatalogEntry(
+                id: "second-game",
+                title: "Second Game",
+                subtitle: "Drop signals in the relay yard",
+                packageBaseURL: ClientConfiguration.gameBaseURL(for: "second-game")
+            ),
+        ]
+    }
 }
 
 struct LaunchRoute: Decodable { let destinationWorld: String }
@@ -302,6 +314,16 @@ enum ClientConfiguration {
 
     static var backendURL: URL { configuredURL(forKey: "CUBACADABRA_BACKEND_URL", fallback: defaultBackendURL) }
     static var gameBaseURL: URL { configuredURL(forKey: "CUBACADABRA_GAME_BASE_URL", fallback: defaultGameBaseURL) }
+    static let publicAssetHost = "assets.cubacadabra.com"
+
+    static func gameBaseURL(for gameID: String) -> URL {
+        var components = URLComponents(url: gameBaseURL, resolvingAgainstBaseURL: false)
+        let path = components?.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")) ?? ""
+        let parentPath = path.split(separator: "/").dropLast().joined(separator: "/")
+        components?.path = "/" + (parentPath.isEmpty ? gameID : parentPath + "/" + gameID) + "/"
+        return components?.url ?? gameBaseURL
+    }
+
     static var backendAPIURL: URL {
         var components = URLComponents(url: backendURL, resolvingAgainstBaseURL: false)!
         components.scheme = components.scheme == "wss" ? "https" : "http"
