@@ -34,6 +34,7 @@ struct GamePackage: Decodable {
 
 struct GameAssets: Decodable {
     let audio: [String: GameAudioAssetDefinition]?
+    let images: [String: GameImageAssetDefinition]?
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -49,9 +50,21 @@ struct GameAssets: Decodable {
         } else {
             audio = nil
         }
+        if container.contains(.images) {
+            guard try !container.decodeNil(forKey: .images) else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .images,
+                    in: container,
+                    debugDescription: "Game manifest assets.images must be an object."
+                )
+            }
+            images = try container.decode([String: GameImageAssetDefinition].self, forKey: .images)
+        } else {
+            images = nil
+        }
     }
 
-    private enum CodingKeys: String, CodingKey { case audio }
+    private enum CodingKeys: String, CodingKey { case audio, images }
 }
 
 struct GameAudioAssetDefinition: Decodable {
@@ -65,6 +78,17 @@ struct GameAudioAssetDefinition: Decodable {
     }
 
     private enum CodingKeys: String, CodingKey { case path, volume }
+}
+
+struct GameImageAssetDefinition: Decodable {
+    let path: String
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        path = try container.decode(String.self, forKey: .path)
+    }
+
+    private enum CodingKeys: String, CodingKey { case path }
 }
 
 struct GameCatalogEntry: Identifiable, Equatable {
@@ -245,6 +269,7 @@ enum GamePackageError: LocalizedError {
     case invalidURL, invalidGameID, httpFailure(Int), invalidScript
     case missingWorld(String), missingBundledPackage, invalidBundledPackage
     case invalidAudioAsset(String)
+    case invalidImageAsset(String), tooManyImageAssets, imageAtlasTooLarge, imageAtlasEncodingFailed
 
     var errorDescription: String? {
         switch self {
@@ -256,6 +281,10 @@ enum GamePackageError: LocalizedError {
         case .missingBundledPackage: return "The bundled first game could not be found."
         case .invalidBundledPackage: return "The bundled first game could not be opened."
         case .invalidAudioAsset(let id): return "The game audio asset \"\(id)\" is invalid."
+        case .invalidImageAsset(let id): return "The game image asset \"\(id)\" is invalid."
+        case .tooManyImageAssets: return "This game declares too many world images."
+        case .imageAtlasTooLarge: return "The game images do not fit in the world texture atlas."
+        case .imageAtlasEncodingFailed: return "The game image atlas could not be prepared."
         }
     }
 }

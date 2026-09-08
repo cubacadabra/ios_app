@@ -44,6 +44,7 @@ struct RustGameSurface: UIViewRepresentable {
     final class Coordinator: NSObject, MTKViewDelegate {
         private var renderer: OpaquePointer?
         private var engine: EngineBridge?
+        private var packageImagesEngine: EngineBridge?
         private var lastViewportDescription = ""
         private var lastDrawableSize = CGSize.zero
 
@@ -88,6 +89,7 @@ struct RustGameSurface: UIViewRepresentable {
             resizeRenderer(to: view.drawableSize, view: view)
             guard surface.isActive else { return }
             attachIfNeeded(to: view)
+            uploadPackageImagesIfNeeded()
             syncEngine()
         }
 
@@ -108,6 +110,7 @@ struct RustGameSurface: UIViewRepresentable {
                 engine_renderer_destroy(renderer)
                 self.renderer = nil
             }
+            packageImagesEngine = nil
             engine = nil
         }
 
@@ -137,6 +140,14 @@ struct RustGameSurface: UIViewRepresentable {
         private func syncEngine() {
             guard let renderer, let engine else { return }
             engine.sync(renderer: renderer)
+        }
+
+        private func uploadPackageImagesIfNeeded() {
+            guard let renderer, let engine, packageImagesEngine !== engine else { return }
+            packageImagesEngine = engine
+            if !engine.uploadPackageImageAtlas(to: renderer) {
+                rustSurfaceLog.error("Package image atlas upload failed")
+            }
         }
     }
 }

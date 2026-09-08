@@ -442,6 +442,8 @@ final class GameViewModel: ObservableObject {
 
     private func makeEngine(from loaded: LoadedGamePackage) throws -> EngineBridge {
         let loadedEngine = try EngineBridge()
+        let imageAtlas = try GameImageAtlasBuilder.make(from: loaded.imageAssets)
+        loadedEngine.setPackageImageAtlas(imageAtlas)
         do {
             try loadedEngine.loadPackage(loaded.manifest)
             try loadedEngine.loadScript(loaded.script)

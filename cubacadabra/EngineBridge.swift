@@ -57,6 +57,7 @@ struct EngineFrame {
 
 final class EngineBridge {
     private let handle: OpaquePointer
+    private var packageImageAtlas: GameImageAtlas?
 
     init() throws {
         guard let handle = engine_create() else {
@@ -255,6 +256,29 @@ final class EngineBridge {
 
     func reconcilePlayer(position: SIMD3<Float>, yaw: Float) {
         engine_reconcile_player(handle, position.x, position.y, position.z, yaw)
+    }
+
+    func setPackageImageAtlas(_ atlas: GameImageAtlas?) {
+        packageImageAtlas = atlas
+    }
+
+    @discardableResult
+    func uploadPackageImageAtlas(to renderer: OpaquePointer) -> Bool {
+        guard let atlas = packageImageAtlas else { return true }
+        let regionData = Data(atlas.regionsJSON.utf8)
+        return atlas.pixels.withUnsafeBytes { pixelBuffer in
+            regionData.withUnsafeBytes { regionBuffer in
+                engine_renderer_set_package_image_atlas(
+                    renderer,
+                    UInt32(atlas.width),
+                    UInt32(atlas.height),
+                    pixelBuffer.bindMemory(to: UInt8.self).baseAddress,
+                    UInt(atlas.pixels.count),
+                    regionBuffer.bindMemory(to: UInt8.self).baseAddress,
+                    UInt(regionData.count)
+                ) != 0
+            }
+        }
     }
 
     @discardableResult
