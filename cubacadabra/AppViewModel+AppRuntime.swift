@@ -7,13 +7,19 @@ extension AppViewModel {
     func changeProfileUsername(_ value: String) { dispatchApp(["type": "username_changed", "value": value]) }
     func saveProfileUsername() { dispatchApp(["type": "save_username"]) }
 
+    func beginMorphEdit() { dispatchApp(["type": "begin_body_edit"]) }
+    func changeMorph(_ bodyID: String) { dispatchApp(["type": "body_changed", "body_id": bodyID]) }
+    func saveMorph() { dispatchApp(["type": "save_body"]) }
+
     func replaceAppSession() {
         for task in appRequests.values { task.cancel() }
         appRequests.removeAll()
+        let bodyID: Any = authUser?.bodyID ?? NSNull()
         dispatchApp([
             "type": "replace_session",
             "account_id": authUser?.id as Any? ?? NSNull(),
             "username": authUser?.username as Any? ?? NSNull(),
+            "body_id": bodyID,
         ])
     }
 
@@ -26,6 +32,12 @@ extension AppViewModel {
         if var user = authUser, user.id == appSnapshot.accountId,
            user.username != appSnapshot.profile.username {
             user.username = appSnapshot.profile.username
+            authUser = user
+            publishGameSession()
+        }
+        if var user = authUser, user.id == appSnapshot.accountId,
+           user.bodyID != appSnapshot.profile.bodyId {
+            user.bodyID = appSnapshot.profile.bodyId
             authUser = user
             publishGameSession()
         }

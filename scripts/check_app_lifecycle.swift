@@ -44,7 +44,6 @@ final class AppAuthenticationService {
         await pendingHTTP.value()
     }
     func saveBirthday(_ dob: String) async throws -> AppProfileUpdateResult { await pendingProfile.value() }
-    func saveAvatar(bodyID: String) async throws -> AppProfileUpdateResult { await pendingProfile.value() }
 }
 
 @MainActor
@@ -64,7 +63,7 @@ struct CheckAppLifecycle {
         preconditionFailure(label)
     }
 
-    static func result(_ id: String, _ username: String, body: String = "robot") -> AppAuthResult {
+    static func result(_ id: String, _ username: String, body: String = "cuba:person.v1") -> AppAuthResult {
         AppAuthResult(accessToken: "token-" + id, refreshToken: "refresh-" + id,
             accessTokenExpiresIn: 3600,
             user: AppAuthUser(id: id, email: nil, name: id, dateOfBirth: "2000-01-01",
@@ -81,7 +80,8 @@ struct CheckAppLifecycle {
         auth.restoreResult = ada
         let app = AppViewModel(authentication: auth, defaults: defaults)
         await app.start()
-        precondition(app.authUser == ada.user && !app.isRestoring)
+        precondition(app.authUser?.id == ada.user.id && app.authUser?.username == ada.user.username
+            && app.authUser?.bodyID == "cuba:person.v1" && !app.isRestoring)
         precondition(app.gameSession.accountID == "a" && app.gameSession.accessToken == "token-a")
         let initialSession = app.appSnapshot.sessionId
         await app.start()
@@ -113,14 +113,15 @@ struct CheckAppLifecycle {
         await eventually("Save finished") { !app.profileUsername.usernameIsSaving }
         refresh.finish(ada)
         await app.start()
-        precondition(app.authUser?.username == "Grace" && app.authUser?.bodyID == "robot")
+        precondition(app.authUser?.username == "Grace" && app.gameSession.bodyID == "cuba:person.v1")
         precondition(app.gameSession.username == "Grace")
 
-        let morph = Task { try await app.saveMorph("cat") }
-        await eventually("Morph started") { auth.pendingProfile.waiting }
-        auth.pendingProfile.finish(AppProfileUpdateResult(user: result("a", "Ada", body: "cat").user, age: 26))
-        _ = try await morph.value
-        precondition(app.authUser?.username == "Grace" && app.gameSession.bodyID == "cat")
+        app.changeMorph("cuba:person-girl.v1")
+        app.saveMorph()
+        await eventually("Morph started") { auth.pendingHTTP.waiting }
+        auth.pendingHTTP.finish((200, #"{"user":{"id":"a","body_id":"cuba:person-girl.v1"}}"#))
+        await eventually("Morph finished") { !app.profileUsername.bodyIsSaving }
+        precondition(app.authUser?.username == "Grace" && app.gameSession.bodyID == "cuba:person-girl.v1")
 
         // A new game/renderer never participates in any of the work above.
         // Logout + replacement must reject a late username completion.
@@ -136,7 +137,7 @@ struct CheckAppLifecycle {
         await app.start()
         auth.pendingHTTP.finish((200, #"{"user":{"id":"a","username":"NewName"}}"#))
         await oldSave.value
-        precondition(app.authUser == lin.user && app.profileUsername.username == "Lin")
+        precondition(app.authUser?.id == "b" && app.authUser?.username == "Lin" && app.profileUsername.username == "Lin")
         precondition(app.gameSession.accountID == "b" && app.gameSession.accessToken == "token-b")
 
         // Non-Rust profile endpoints are fenced by the same session identity.

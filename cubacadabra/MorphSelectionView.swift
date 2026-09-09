@@ -23,13 +23,6 @@ struct MorphOption: Identifiable, Hashable {
 struct MorphSelectionView: View {
     @ObservedObject var model: AppViewModel
     @State private var selectedMorphID = MorphOption.fallback.id
-    @State private var isSaving = false
-    @State private var message: String?
-    @State private var messageIsError = false
-
-    private var selectedMorph: MorphOption {
-        MorphOption.option(for: selectedMorphID)
-    }
 
     var body: some View {
         ScrollView {
@@ -44,18 +37,18 @@ struct MorphSelectionView: View {
                     }
                 }
 
-                if let message {
-                    Label(message, systemImage: messageIsError ? "exclamationmark.circle" : "checkmark.circle")
+                if let feedback = model.profileUsername.bodyFeedback {
+                    Label(feedback.message, systemImage: feedback.kind == .error ? "exclamationmark.circle" : "checkmark.circle")
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
-                        .foregroundStyle(messageIsError ? .red : .green)
+                        .foregroundStyle(feedback.kind == .error ? .red : .green)
                 }
 
                 Button {
                     saveMorph()
                 } label: {
                     HStack(spacing: 10) {
-                        if isSaving { ProgressView().tint(.white) }
-                        Text(isSaving ? "SAVING…" : "SAVE MORPH")
+                        if model.profileUsername.bodyIsSaving { ProgressView().tint(.white) }
+                        Text(model.profileUsername.bodyIsSaving ? "SAVING…" : "SAVE MORPH")
                         Spacer()
                         Image(systemName: "checkmark")
                     }
@@ -67,7 +60,7 @@ struct MorphSelectionView: View {
                     .background(morphCoral, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .disabled(isSaving)
+                .disabled(model.profileUsername.bodyIsSaving)
             }
             .frame(maxWidth: 620, alignment: .leading)
             .padding(.horizontal, 24)
@@ -78,7 +71,8 @@ struct MorphSelectionView: View {
         .navigationBarTitleDisplayMode(.inline)
         .background(Color(.systemBackground).ignoresSafeArea())
         .onAppear {
-            selectedMorphID = MorphOption.option(for: model.authUser?.bodyID).id
+            selectedMorphID = MorphOption.option(for: model.profileUsername.bodyId).id
+            model.beginMorphEdit()
         }
     }
 
@@ -87,7 +81,7 @@ struct MorphSelectionView: View {
 
         return Button {
             selectedMorphID = morph.id
-            message = nil
+            model.changeMorph(morph.id)
         } label: {
             VStack(spacing: 10) {
                 Image(morph.imageName)
@@ -122,29 +116,6 @@ struct MorphSelectionView: View {
     }
 
     private func saveMorph() {
-        isSaving = true
-        message = nil
-        messageIsError = false
-        Task {
-            do {
-                let result = try await model.saveMorph(selectedMorph.id)
-                selectedMorphID = MorphOption.option(for: result.user.bodyID).id
-                isSaving = false
-                message = "Morph saved."
-            } catch let error as AppProfileError {
-                isSaving = false
-                messageIsError = true
-                message = switch error.errorCode {
-                case "invalid_body_id": "Choose one of the available morphs."
-                case "age_required": "Complete your birthday before choosing a morph."
-                case "not_authenticated": "Your sign-in has expired. Please sign in again."
-                default: "We couldn’t save your morph. Please try again."
-                }
-            } catch {
-                isSaving = false
-                messageIsError = true
-                message = "We couldn’t save your morph. Please try again."
-            }
-        }
+        model.saveMorph()
     }
 }

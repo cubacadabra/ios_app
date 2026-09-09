@@ -26,6 +26,13 @@ struct CheckAppContract {
                         "username_feedback": profile.usernameFeedback.map {
                             ["kind": $0.kind.rawValue, "message": $0.message]
                         } as Any? ?? NSNull(),
+                        "body_id": profile.bodyId as Any? ?? NSNull(),
+                        "body_draft": profile.bodyDraft,
+                        "body_can_save": profile.bodyCanSave,
+                        "body_is_saving": profile.bodyIsSaving,
+                        "body_feedback": profile.bodyFeedback.map {
+                            ["kind": $0.kind.rawValue, "message": $0.message]
+                        } as Any? ?? NSNull(),
                     ],
                 ]
                 assertSubset(projected, step["expected"]!, label: name)

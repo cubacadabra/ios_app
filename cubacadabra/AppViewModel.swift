@@ -68,7 +68,7 @@ final class AppViewModel: ObservableObject {
             if var result {
                 // A refresh that raced an edit/save must not roll back that work.
                 if result.user.id == authUser?.id,
-                   revision != profileRevision || profileUsername.usernameIsSaving,
+                   revision != profileRevision || profileUsername.usernameIsSaving || profileUsername.bodyIsSaving,
                    let user = authUser {
                     result = AppAuthResult(accessToken: result.accessToken,
                         refreshToken: result.refreshToken, accessTokenExpiresIn: result.accessTokenExpiresIn,
@@ -146,7 +146,7 @@ final class AppViewModel: ObservableObject {
 
     func applyAuthentication(_ result: AppAuthResult, replaceSession: Bool = true) {
         let needsReplacement = replaceSession || authUser?.id != result.user.id
-            || authUser?.username != result.user.username
+            || authUser?.username != result.user.username || authUser?.bodyID != result.user.bodyID
         accessToken = result.accessToken
         authUser = result.user
         if needsReplacement { replaceAppSession() }

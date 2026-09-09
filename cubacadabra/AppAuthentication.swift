@@ -130,10 +130,6 @@ final class AppAuthenticationService: NSObject {
         return (response.statusCode, String(data: data, encoding: .utf8) ?? "")
     }
 
-    func saveAvatar(bodyID: String) async throws -> AppProfileUpdateResult {
-        try await updateProfile(path: "auth/avatar", body: ["body_id": bodyID])
-    }
-
     private func exchange(code: String) async throws -> AppAuthResult {
         try await tokenRequest(
             path: "auth/app/exchange",

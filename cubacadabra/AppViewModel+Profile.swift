@@ -32,19 +32,6 @@ extension AppViewModel {
         return AppProfileUpdateResult(user: user, age: result.age)
     }
 
-    func saveMorph(_ bodyID: String) async throws -> AppProfileUpdateResult {
-        let sessionID = appSnapshot.sessionId
-        let result = try await authentication.saveAvatar(bodyID: bodyID)
-        guard appSnapshot.sessionId == sessionID, var user = authUser, user.id == result.user.id else {
-            throw AppProfileError.unauthorized
-        }
-        user.bodyID = result.user.bodyID
-        authUser = user
-        profileRevision &+= 1
-        publishGameSession()
-        return AppProfileUpdateResult(user: user, age: result.age)
-    }
-
     private static func calculateAge(from dob: String) -> Int? {
         let values = dob.split(separator: "-").compactMap { Int($0) }
         guard values.count == 3 else { return nil }

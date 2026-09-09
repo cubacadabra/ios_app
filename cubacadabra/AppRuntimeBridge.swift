@@ -14,6 +14,11 @@ struct AppRuntimeProfileSnapshot: Decodable, Equatable {
     let usernameCanSave: Bool
     let usernameIsSaving: Bool
     let usernameFeedback: AppRuntimeUsernameFeedback?
+    let bodyId: String?
+    let bodyDraft: String
+    let bodyCanSave: Bool
+    let bodyIsSaving: Bool
+    let bodyFeedback: AppRuntimeUsernameFeedback?
 }
 
 struct AppRuntimeSnapshot: Decodable {
