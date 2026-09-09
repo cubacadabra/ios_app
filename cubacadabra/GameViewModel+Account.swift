@@ -58,7 +58,6 @@ extension GameViewModel {
         googleSignIn.signOut()
         worldSocket.disconnect()
         worldSocket.resetForGuest()
-        connectedWorldID = nil
         hasEnteredGame = false
         isAuthenticated = false
         authUser = nil

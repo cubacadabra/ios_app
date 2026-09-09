@@ -7,7 +7,7 @@ case "$rust_repo_path" in
   /*) rust_repo_dir="$rust_repo_path" ;;
   *) rust_repo_dir="$project_dir/$rust_repo_path" ;;
 esac
-manifest_path="$rust_repo_dir/Cargo.toml"
+manifest_path="$rust_repo_dir/crates/client/Cargo.toml"
 output_dir="${DERIVED_FILE_DIR:-$project_dir/rust/build}/cubacadabra-engine"
 cargo_target_dir="${CARGO_TARGET_DIR:-${DERIVED_FILE_DIR:-$project_dir/rust/build}/rust-target}"
 rust_profile=debug
@@ -54,8 +54,8 @@ for rust_target in $rust_targets; do
   if ! $rustc_command --print target-libdir --target "$rust_target" >/dev/null 2>&1; then
     rustup target add "$rust_target"
   fi
-  CARGO_TARGET_DIR="$cargo_target_dir" $cargo_command build --manifest-path "$manifest_path" --target "$rust_target" $cargo_profile_args
-  set -- "$@" "$cargo_target_dir/$rust_target/$rust_profile/libcubacadabra_engine.a"
+  CARGO_TARGET_DIR="$cargo_target_dir" $cargo_command build --manifest-path "$manifest_path" --target "$rust_target" --features metal $cargo_profile_args
+  set -- "$@" "$cargo_target_dir/$rust_target/$rust_profile/libcubacadabra_client.a"
 done
 
 if [ "$#" -eq 0 ]; then

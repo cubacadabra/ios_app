@@ -9,13 +9,6 @@ struct EnginePlayer {
     var sprinting: Bool
 }
 
-struct EngineRemotePlayer {
-    var position: SIMD3<Float>
-    var yaw: Float
-    var moving: Bool
-    var sprinting: Bool
-}
-
 struct EngineBuildBlock {
     var position: SIMD3<Float>
     var size: SIMD3<Float>
@@ -56,43 +49,82 @@ struct EngineFrame {
 }
 
 final class EngineBridge {
+    private let clientHandle: OpaquePointer
     private let handle: OpaquePointer
     private var packageImageAtlas: GameImageAtlas?
 
-    init() throws {
-        guard let handle = engine_create() else {
+    init(manifest: String, script: String) throws {
+        let manifestBytes = Array(manifest.utf8)
+        let scriptBytes = Array(script.utf8)
+        let created = manifestBytes.withUnsafeBytes { manifestBuffer in
+            scriptBytes.withUnsafeBytes { scriptBuffer in
+                client_create(
+                    manifestBuffer.bindMemory(to: UInt8.self).baseAddress,
+                    UInt(manifestBytes.count),
+                    scriptBuffer.bindMemory(to: UInt8.self).baseAddress,
+                    UInt(scriptBytes.count)
+                )
+            }
+        }
+        guard let clientHandle = created, let handle = client_engine(clientHandle) else {
+            if let created { client_destroy(created) }
             throw EngineBridgeError.creationFailed
         }
+        self.clientHandle = clientHandle
         self.handle = handle
     }
 
     deinit {
-        engine_destroy(handle)
+        client_destroy(clientHandle)
     }
 
-    func loadScript(_ source: String) throws {
-        let bytes = Array(source.utf8)
-        let pointer = engine_script_buffer_ptr(handle, UInt(bytes.count))
-        guard let pointer else { throw EngineBridgeError.scriptBufferFailed }
-        bytes.withUnsafeBytes { rawBuffer in
-            guard let baseAddress = rawBuffer.baseAddress else { return }
-            pointer.update(from: baseAddress.assumingMemoryBound(to: UInt8.self), count: bytes.count)
-        }
-        guard engine_load_script_buffer(handle) != 0 else {
-            throw EngineBridgeError.scriptLoadFailed(scriptLoadError())
+    func transportConnected() {
+        client_transport_connected(clientHandle)
+    }
+
+    func transportDisconnected() {
+        client_transport_disconnected(clientHandle)
+    }
+
+    func requestTransport() {
+        client_request_transport(clientHandle)
+    }
+
+    @discardableResult
+    func receiveTransportMessage(_ data: Data) -> Bool {
+        data.withUnsafeBytes { rawBuffer in
+            client_receive_text(
+                clientHandle,
+                rawBuffer.bindMemory(to: UInt8.self).baseAddress,
+                UInt(data.count)
+            ) != 0
         }
     }
 
-    func loadPackage(_ source: String) throws {
-        let bytes = Array(source.utf8)
-        let pointer = engine_package_buffer_ptr(handle, UInt(bytes.count))
-        guard let pointer else { throw EngineBridgeError.packageBufferFailed }
-        bytes.withUnsafeBytes { rawBuffer in
-            guard let baseAddress = rawBuffer.baseAddress else { return }
-            pointer.update(from: baseAddress.assumingMemoryBound(to: UInt8.self), count: bytes.count)
+    func setIgnoredPlayerIDs(_ playerIDs: Set<String>) {
+        guard let data = try? JSONEncoder().encode(playerIDs.sorted()) else { return }
+        data.withUnsafeBytes { rawBuffer in
+            _ = client_set_ignored_player_ids_json(
+                clientHandle,
+                rawBuffer.bindMemory(to: UInt8.self).baseAddress,
+                UInt(data.count)
+            )
         }
-        guard engine_load_package_buffer(handle) != 0 else {
-            throw EngineBridgeError.packageLoadFailed
+    }
+
+    func pollClientActions() -> [EngineClientAction] {
+        var actions: [EngineClientAction] = []
+        while true {
+            let kind = client_poll_action(clientHandle)
+            guard kind != CUBACADABRA_CLIENT_ACTION_NONE else { return actions }
+            let length = Int(client_action_len(clientHandle))
+            guard length > 0, let pointer = client_action_ptr(clientHandle) else { continue }
+            let source = String(decoding: UnsafeBufferPointer(start: pointer, count: length), as: UTF8.self)
+            if kind == CUBACADABRA_CLIENT_ACTION_SET_WORLD {
+                actions.append(.setWorld(source))
+            } else if kind == CUBACADABRA_CLIENT_ACTION_SEND_TEXT {
+                actions.append(.sendText(source))
+            }
         }
     }
 
@@ -115,35 +147,6 @@ final class EngineBridge {
 
     var appearanceStatus: UInt8 {
         engine_appearance_status(handle)
-    }
-
-    @discardableResult
-    func applyRemoteUpdate(_ data: Data) -> UInt8 {
-        data.withUnsafeBytes { rawBuffer in
-            let pointer = rawBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self)
-            return engine_apply_remote_update_json(handle, pointer, UInt(data.count))
-        }
-    }
-
-    func resetRemoteSession() {
-        engine_reset_remote_session(handle)
-    }
-
-    @discardableResult
-    func receiveNetworkMessage(_ data: Data) -> UInt8 {
-        data.withUnsafeBytes { rawBuffer in
-            let pointer = rawBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self)
-            return engine_receive_network_message_json(handle, pointer, UInt(data.count))
-        }
-    }
-
-    func pollNetworkMessage() -> Data? {
-        guard engine_network_poll_message(handle) != 0 else { return nil }
-        let length = Int(engine_network_message_len(handle))
-        guard length > 0, let pointer = engine_network_message_ptr(handle) else {
-            return Data()
-        }
-        return Data(bytes: pointer, count: length)
     }
 
     func pollAudioMessage() -> Data? {
@@ -211,31 +214,6 @@ final class EngineBridge {
         Int(engine_ui_node_count(handle))
     }
 
-    private func scriptLoadError() -> String {
-        let length = Int(engine_script_error_len(handle))
-        guard length > 0, let pointer = engine_script_error_ptr(handle) else {
-            return "The Rust engine did not provide a Luau error."
-        }
-        let data = Data(bytes: pointer, count: length)
-        return String(data: data, encoding: .utf8) ?? "The Rust engine returned an invalid Luau error."
-    }
-
-    func setRemotePlayers(_ players: [EngineRemotePlayer]) {
-        engine_set_remote_player_count(handle, UInt(players.count))
-        for (index, player) in players.enumerated() {
-            engine_set_remote_player(
-                handle,
-                UInt(index),
-                player.position.x,
-                player.position.y,
-                player.position.z,
-                player.yaw,
-                player.moving ? 1 : 0,
-                player.sprinting ? 1 : 0
-            )
-        }
-    }
-
     func setBuildBlocks(_ blocks: [EngineBuildBlock]) {
         engine_set_build_block_count(handle, UInt(blocks.count))
         for (index, block) in blocks.enumerated() {
@@ -252,10 +230,6 @@ final class EngineBridge {
                 block.rotation
             )
         }
-    }
-
-    func reconcilePlayer(position: SIMD3<Float>, yaw: Float) {
-        engine_reconcile_player(handle, position.x, position.y, position.z, yaw)
     }
 
     func setPackageImageAtlas(_ atlas: GameImageAtlas?) {
@@ -368,20 +342,17 @@ final class EngineBridge {
 
 enum EngineBridgeError: LocalizedError {
     case creationFailed
-    case scriptBufferFailed
-    case scriptLoadFailed(String)
-    case packageBufferFailed
-    case packageLoadFailed
 
     var errorDescription: String? {
         switch self {
         case .creationFailed: return "The Rust game engine could not be created."
-        case .scriptBufferFailed: return "The Rust game engine could not receive the game script."
-        case .scriptLoadFailed(let detail): return "The Luau game script could not be loaded: \(detail)"
-        case .packageBufferFailed: return "The Rust game engine could not receive the game manifest."
-        case .packageLoadFailed: return "The Rust game engine could not load the game manifest."
         }
     }
+}
+
+enum EngineClientAction {
+    case setWorld(String)
+    case sendText(String)
 }
 
 extension Array {

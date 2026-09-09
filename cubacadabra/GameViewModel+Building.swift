@@ -4,14 +4,7 @@ import OSLog
 
 extension GameViewModel {
     internal func handleExperienceEvent(_ event: WorldExperienceEvent) {
-        if event.type == "experience_launch",
-           event.playerIDs.contains(worldSocket.playerID),
-           let sessionWorldID = event.sessionWorldID,
-           let sessionIndex = runtimeWorldIDs.firstIndex(of: "real-game") {
-            pendingSessionWorldID = sessionWorldID
-            engine?.startWorld(sessionIndex)
-            return
-        }
+        if event.type == "experience_launch" { return }
         if event.type == "experience_state", event.kind == "lobby" {
             lobbyLaunchStartsAt = event.startsAt.map { Date(timeIntervalSince1970: Double($0) / 1000) }
             lobbyLaunchClockOffset = Date().timeIntervalSince1970 - Double(event.serverNow ?? Int64(Date().timeIntervalSince1970 * 1000)) / 1000
@@ -108,7 +101,6 @@ extension GameViewModel {
     func saveBuild() { worldSocket.sendExperience("build_save") }
 
     func returnToLobby() {
-        pendingSessionWorldID = nil
         guard lobbyEnabled else { return }
         guard let index = runtimeWorldIDs.firstIndex(of: "lobby"), engine?.startWorld(index) == true else { return }
         worldID = "lobby"

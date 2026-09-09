@@ -17,6 +17,7 @@ final class WorldSocketClient {
     private let onMove: (WorldMovementEvent) -> Void
     private let onUsername: (WorldUsernameEvent) -> Void
     private let onExperience: (WorldExperienceEvent) -> Void
+    private let onRawMessage: (Data) -> Void
     private let onGameMessage: (Data) -> Void
     private var socketTask: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
@@ -40,6 +41,7 @@ final class WorldSocketClient {
         onMove: @escaping (WorldMovementEvent) -> Void,
         onUsername: @escaping (WorldUsernameEvent) -> Void,
         onExperience: @escaping (WorldExperienceEvent) -> Void,
+        onRawMessage: @escaping (Data) -> Void,
         onGameMessage: @escaping (Data) -> Void
     ) {
         playerID = Self.loadPlayerID()
@@ -52,6 +54,7 @@ final class WorldSocketClient {
         self.onMove = onMove
         self.onUsername = onUsername
         self.onExperience = onExperience
+        self.onRawMessage = onRawMessage
         self.onGameMessage = onGameMessage
     }
 
@@ -158,6 +161,7 @@ final class WorldSocketClient {
             return
         }
 
+        onRawMessage(data)
         guard let event = try? JSONDecoder().decode(WorldEventEnvelope.self, from: data) else { return }
         if event.type == "session_identity" {
             guard let eventPlayerID = event.id else { return }
@@ -405,6 +409,24 @@ final class WorldSocketClient {
             message["expectedSequence"] = expectedSequence
         }
         return sendJSONMessage(message)
+    }
+
+    @discardableResult
+    func sendRawText(_ text: String) -> ExperienceSendResult {
+        guard !text.isEmpty, text.utf8.count <= 65_536 else { return .invalid }
+        guard !stopped, worldID != nil else { return .unavailable }
+        guard let socketTask, socketTask.state == .running else {
+            enqueueExperienceMessage(text)
+            return .queued
+        }
+        socketTask.send(.string(text)) { [weak self, weak socketTask] error in
+            guard error != nil, let self, let socketTask else { return }
+            Task { @MainActor in
+                guard self.isCurrent(socketTask, generation: self.generation) else { return }
+                self.enqueueExperienceMessage(text)
+            }
+        }
+        return .sent
     }
 
     private func sendJSONMessage(_ message: [String: Any]) -> ExperienceSendResult {

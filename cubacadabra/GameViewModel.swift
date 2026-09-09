@@ -67,11 +67,6 @@ final class GameViewModel: ObservableObject {
     var noticeTask: Task<Void, Never>?
     var moderationNoticeTask: Task<Void, Never>?
     var buildActionNoticeTask: Task<Void, Never>?
-    var remotePlayers: [String: RemotePlayerState] = [:]
-    var remoteSequence: UInt64 = 0
-    var remoteRosterDirty = true
-    var connectedWorldID: String?
-    var pendingSessionWorldID: String?
     var gamePaused = false
 
     init() {
@@ -94,7 +89,14 @@ final class GameViewModel: ObservableObject {
 
     lazy var worldSocket = WorldSocketClient(
         onStateChange: { [weak self] state in
-            self?.connectionState = state
+            guard let self else { return }
+            let previous = self.connectionState
+            self.connectionState = state
+            if state == .connected, previous != .connected {
+                self.engine?.transportConnected()
+            } else if previous == .connected, state != .connected {
+                self.engine?.transportDisconnected()
+            }
         },
         onEvent: { [weak self] event in
             self?.handlePresenceEvent(event)
@@ -111,9 +113,10 @@ final class GameViewModel: ObservableObject {
         onExperience: { [weak self] event in
             self?.handleExperienceEvent(event)
         },
-        onGameMessage: { [weak self] data in
-            self?.engine?.receiveNetworkMessage(data)
-        }
+        onRawMessage: { [weak self] data in
+            self?.engine?.receiveTransportMessage(data)
+        },
+        onGameMessage: { _ in }
     )
 
     func load() async {
@@ -162,7 +165,6 @@ final class GameViewModel: ObservableObject {
 
     func retry() {
         worldSocket.disconnect()
-        connectedWorldID = nil
         engine = nil
         gameAudio.configure(with: [:])
         package = nil
@@ -191,7 +193,7 @@ final class GameViewModel: ObservableObject {
         }
         let delta = Float(min(max(date.timeIntervalSince(lastTick), 0), 0.05))
         self.lastTick = date
-        syncRemotePlayers()
+        dispatchClientActions()
         engine.setInput(
             forward: usernameEditorOpen ? 0 : forward,
             strafe: usernameEditorOpen ? 0 : strafe,
@@ -207,7 +209,7 @@ final class GameViewModel: ObservableObject {
         lookY = 0
         zoomDelta = 0
         engine.step(delta)
-        flushNetworkMessages()
+        dispatchClientActions()
         flushAudioMessages()
         handleUIEvents()
         let nextFrame = engine.frame()
@@ -341,12 +343,7 @@ final class GameViewModel: ObservableObject {
 
         worldSocket.disconnect()
         worldSocket.setGameID(game.id)
-        connectedWorldID = nil
-        pendingSessionWorldID = nil
-        remotePlayers.removeAll()
         remotePlayerNames.removeAll()
-        remoteSequence = 0
-        remoteRosterDirty = true
         gameAudio.configure(with: loaded.audioAssets)
         engine = nextEngine
         package = nextPackage
@@ -368,8 +365,8 @@ final class GameViewModel: ObservableObject {
     }
 
     func disconnect() {
+        engine?.transportDisconnected()
         worldSocket.disconnect()
-        connectedWorldID = nil
     }
 
     func enterGame() {
@@ -377,6 +374,7 @@ final class GameViewModel: ObservableObject {
         hasEnteredGame = true
         gamePaused = false
         lastTick = nil
+        engine?.requestTransport()
         connectWorld(worldID)
     }
 
@@ -405,27 +403,16 @@ final class GameViewModel: ObservableObject {
         pauseGame()
     }
 
-    private func flushNetworkMessages() {
+    internal func dispatchClientActions() {
         guard let engine else { return }
-        while let data = engine.pollNetworkMessage() {
-            guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let channel = object["channel"] as? String else { continue }
-            let retained = object["retained"] as? Bool ?? false
-            let expectedSequence = (object["expectedSequence"] as? NSNumber).flatMap { number -> Int? in
-                guard !(object["expectedSequence"] is Bool) else { return nil }
-                let value = number.int64Value
-                guard value >= 0, Double(value) == number.doubleValue else { return nil }
-                return Int(value)
+        engine.setIgnoredPlayerIDs(blockedPlayerIDs)
+        for action in engine.pollClientActions() {
+            switch action {
+            case .setWorld(let worldID):
+                worldSocket.connect(worldID: worldID)
+            case .sendText(let source):
+                worldSocket.sendRawText(source)
             }
-            let type = expectedSequence != nil
-                ? "game_state_compare_set"
-                : retained ? "game_state_set" : "game_message"
-            _ = worldSocket.sendGameMessage(
-                type,
-                channel: channel,
-                payload: object["payload"] ?? NSNull(),
-                expectedSequence: expectedSequence
-            )
         }
     }
 
@@ -442,7 +429,7 @@ final class GameViewModel: ObservableObject {
     }
 
     private func makeEngine(from loaded: LoadedGamePackage) throws -> EngineBridge {
-        let loadedEngine = try EngineBridge()
+        let loadedEngine = try EngineBridge(manifest: loaded.manifest, script: loaded.script)
         let imageAtlas = try GameImageAtlasBuilder.make(from: loaded.imageAssets)
         NSLog(
             "Cubacadabra image atlas: imageCount=%ld atlas=%@",
@@ -450,12 +437,7 @@ final class GameViewModel: ObservableObject {
             imageAtlas.map { "\($0.width)x\($0.height)" } ?? "<none>"
         )
         loadedEngine.setPackageImageAtlas(imageAtlas)
-        do {
-            try loadedEngine.loadPackage(loaded.manifest)
-            try loadedEngine.loadScript(loaded.script)
-        } catch {
-            throw error
-        }
+        loadedEngine.setIgnoredPlayerIDs(blockedPlayerIDs)
         loadedEngine.setAuthenticated(isAuthenticated)
         loadedEngine.setUsername(username)
         gameLog.info("Rust package and script loaded; UI nodes: \(loadedEngine.uiNodeCount, privacy: .public)")
