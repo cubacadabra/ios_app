@@ -6,7 +6,7 @@
 typedef struct CubacadabraEngine CubacadabraEngine;
 typedef struct CubacadabraRenderer CubacadabraRenderer;
 typedef struct CubacadabraClient CubacadabraClient;
-typedef struct CubacadabraApp CubacadabraApp;
+#include "cubacadabra_app.h"
 
 #define CUBACADABRA_CLIENT_ACTION_NONE 0
 #define CUBACADABRA_CLIENT_ACTION_SET_WORLD 1
@@ -36,44 +36,6 @@ uint8_t client_set_ignored_player_ids_json(
 uint8_t client_poll_action(CubacadabraClient *client);
 const uint8_t *client_action_ptr(const CubacadabraClient *client);
 uintptr_t client_action_len(const CubacadabraClient *client);
-
-#define CUBACADABRA_APP_EFFECT_NONE 0
-#define CUBACADABRA_APP_EFFECT_SAVE_USERNAME 1
-
-CubacadabraApp *cubacadabra_app_create(
-    const uint8_t *username,
-    uintptr_t username_length
-);
-void cubacadabra_app_destroy(CubacadabraApp *app);
-uint8_t cubacadabra_app_replace_profile(
-    CubacadabraApp *app,
-    const uint8_t *username,
-    uintptr_t username_length
-);
-uint8_t cubacadabra_app_username_changed(
-    CubacadabraApp *app,
-    const uint8_t *value,
-    uintptr_t value_length
-);
-void cubacadabra_app_save_username(CubacadabraApp *app);
-uint8_t cubacadabra_app_username_saved(
-    CubacadabraApp *app,
-    uint32_t effect_id,
-    const uint8_t *username,
-    uintptr_t username_length
-);
-uint8_t cubacadabra_app_username_save_failed(
-    CubacadabraApp *app,
-    uint32_t effect_id,
-    const uint8_t *server_code,
-    uintptr_t server_code_length
-);
-void cubacadabra_app_clear_username_feedback(CubacadabraApp *app);
-uint8_t cubacadabra_app_snapshot_json(CubacadabraApp *app);
-uint8_t cubacadabra_app_poll_effect(CubacadabraApp *app);
-uint32_t cubacadabra_app_effect_id(const CubacadabraApp *app);
-const uint8_t *cubacadabra_app_output_ptr(const CubacadabraApp *app);
-uintptr_t cubacadabra_app_output_len(const CubacadabraApp *app);
 
 #define CUBACADABRA_UI_POINTER_DOWN 0
 #define CUBACADABRA_UI_POINTER_MOVE 1

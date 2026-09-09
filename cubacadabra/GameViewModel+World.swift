@@ -85,7 +85,10 @@ extension GameViewModel {
     internal func handleSessionEvent(_ event: WorldSessionEvent) {
         guard event.playerID == worldSocket.playerID else { return }
         isAuthenticated = event.loggedIn
-        if !event.loggedIn { authUser = nil }
+        if !event.loggedIn {
+            authUser = nil
+            replaceAppSession()
+        }
         if let serverUsername = event.username, (event.hasUsername || !event.loggedIn), !serverUsername.isEmpty {
             username = serverUsername
             engine?.setUsername(serverUsername)

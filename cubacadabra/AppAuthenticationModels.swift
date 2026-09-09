@@ -8,9 +8,9 @@ struct AppAuthUser: Codable, Equatable {
     let id: String
     let email: String?
     let name: String
-    let dateOfBirth: String?
-    let username: String?
-    let bodyID: String?
+    var dateOfBirth: String?
+    var username: String?
+    var bodyID: String?
 
     enum CodingKeys: String, CodingKey {
         case id, email, name

@@ -135,6 +135,7 @@
 			inputPaths = (
 				"$(SRCROOT)/$(RUST_REPO_PATH)/Cargo.toml",
 				"$(SRCROOT)/$(RUST_REPO_PATH)/crates/app/Cargo.toml",
+				"$(SRCROOT)/$(RUST_REPO_PATH)/include/cubacadabra_app.h",
 				"$(SRCROOT)/scripts/build_rust_engine.sh",
 				"$(SRCROOT)/cubacadabra/cubacadabra_engine.h",
 			);
@@ -142,6 +143,7 @@
 			outputPaths = (
 				"$(DERIVED_FILE_DIR)/cubacadabra-engine/libcubacadabra_engine.a",
 				"$(DERIVED_FILE_DIR)/cubacadabra-engine/libcubacadabra_app.a",
+				"$(DERIVED_FILE_DIR)/cubacadabra-engine/cubacadabra_app.h",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -318,6 +320,7 @@
 				DEVELOPMENT_TEAM = 755R3VBZ84;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
+				HEADER_SEARCH_PATHS = "$(DERIVED_FILE_DIR)/cubacadabra-engine";
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -346,7 +349,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.cubacadabra.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				RUST_REPO_PATH = "../rust";
+				RUST_REPO_PATH = ../rust;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -368,6 +371,7 @@
 				DEVELOPMENT_TEAM = 755R3VBZ84;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
+				HEADER_SEARCH_PATHS = "$(DERIVED_FILE_DIR)/cubacadabra-engine";
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -396,7 +400,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.cubacadabra.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				RUST_REPO_PATH = "../rust";
+				RUST_REPO_PATH = ../rust;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;

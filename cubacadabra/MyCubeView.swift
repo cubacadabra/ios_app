@@ -10,7 +10,6 @@ struct MyCubeView: View {
     @State private var selectedBirthday: Date
     @State private var birthdayWasChanged = false
     @State private var parentEmail = ""
-    @State private var username = ""
     @State private var statusMessage: String?
     @State private var statusIsError = false
     @State private var isSaving = false
@@ -53,7 +52,6 @@ struct MyCubeView: View {
         }
         _step = State(initialValue: initialStep)
         _selectedBirthday = State(initialValue: Self.defaultBirthday)
-        _username = State(initialValue: model.authUser?.username ?? "")
     }
 
     var body: some View {
@@ -95,11 +93,6 @@ struct MyCubeView: View {
         }
         .tint(coral)
         .presentationDragIndicator(.visible)
-        .onAppear {
-            if case .basics = step {
-                username = model.authUser?.username ?? model.username
-            }
-        }
     }
 
     private var header: some View {
@@ -301,31 +294,31 @@ struct MyCubeView: View {
                     .font(.system(size: 11, weight: .bold, design: .rounded))
                     .tracking(1.4)
                     .foregroundStyle(.secondary)
-                TextField("Choose a username", text: $username)
+                TextField("Choose a username", text: Binding(get: { model.profileUsername.usernameDraft }, set: { model.changeProfileUsername($0) }))
                     .textFieldStyle(.roundedBorder)
                     .textContentType(.nickname)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .focused($focusedField, equals: .username)
                     .submitLabel(.done)
-                    .onSubmit { saveUsername() }
+                    .onSubmit { model.saveProfileUsername() }
                     .frame(minHeight: 44)
                 Text("2–24 characters: letters, numbers, _ or -")
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
             }
 
-            if let statusMessage {
-                statusText(statusMessage, isError: statusIsError)
+            if let feedback = model.profileUsername.usernameFeedback {
+                statusText(feedback.message, isError: feedback.kind == .error)
             }
 
             saveButton("Save", systemImage: "checkmark") {
-                saveUsername()
+                model.saveProfileUsername()
             }
-            .disabled(isSaving)
+            .disabled(!model.profileUsername.usernameCanSave)
         }
         .onAppear {
-            username = model.authUser?.username ?? model.username
+            model.beginProfileUsernameEdit()
             focusedField = .username
         }
     }
@@ -453,14 +446,14 @@ struct MyCubeView: View {
     private func saveButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                if isSaving {
+                if isSaving || (step == .basics && model.profileUsername.usernameIsSaving) {
                     ProgressView()
                         .tint(.white)
                 } else {
                     Image(systemName: systemImage)
                         .font(.system(size: 13, weight: .bold))
                 }
-                Text(isSaving ? "Saving…" : title)
+                Text((isSaving || (step == .basics && model.profileUsername.usernameIsSaving)) ? "Saving…" : title)
                 Spacer()
             }
             .font(.system(size: 14, weight: .bold, design: .rounded))
@@ -490,7 +483,6 @@ struct MyCubeView: View {
                 let result = try await model.saveBirthday(dob)
                 let age = result.age ?? Self.calculateAge(from: dob) ?? 0
                 step = age < 13 ? .parentEmail : .basics
-                username = result.user.username ?? model.username
                 isSaving = false
             } catch {
                 isSaving = false
@@ -506,30 +498,6 @@ struct MyCubeView: View {
             return
         }
         showStatus("Parent sign-up will continue here next.")
-    }
-
-    private func saveUsername() {
-        let normalized = username.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-        username = normalized
-        guard Self.isValidUsername(normalized) else {
-            focusedField = .username
-            showError("Use 2–24 letters, numbers, _ or -.")
-            return
-        }
-
-        isSaving = true
-        clearStatus()
-        Task {
-            do {
-                let result = try await model.saveProfileUsername(normalized)
-                username = result.user.username ?? normalized
-                isSaving = false
-                showStatus("Username saved.")
-            } catch {
-                isSaving = false
-                showError(Self.usernameErrorMessage(for: error))
-            }
-        }
     }
 
     private func clearStatus() {
@@ -579,34 +547,12 @@ struct MyCubeView: View {
         return trimmed.contains("@") && trimmed.split(separator: "@").count == 2 && !trimmed.hasSuffix("@")
     }
 
-    private static func isValidUsername(_ username: String) -> Bool {
-        username.count >= 2 && username.count <= 24 && username.range(of: "^[A-Za-z0-9_-]+$", options: .regularExpression) != nil
-    }
-
     private static func birthdayErrorMessage(for error: Error) -> String {
         if let profileError = error as? AppProfileError,
            profileError.errorCode == "invalid_date_of_birth" {
             return "That date is not valid. Check the year, month, and day, then try again."
         }
         return "We couldn’t save your birthday. Please try again."
-    }
-
-    private static func usernameErrorMessage(for error: Error) -> String {
-        guard let profileError = error as? AppProfileError else {
-            return "We couldn’t save your username. Please try again."
-        }
-        switch profileError.errorCode {
-        case "username_taken":
-            return "That username is already in use. Try another."
-        case "username_not_allowed":
-            return "That username isn’t available. Try another."
-        case "invalid_username":
-            return "Use 2–24 letters, numbers, _ or -."
-        case "age_required":
-            return "Complete the birthday step before choosing a username."
-        default:
-            return "We couldn’t save your username. Please try again."
-        }
     }
 
     private static func gameSelectionErrorMessage(for error: Error) -> String {

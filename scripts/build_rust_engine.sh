@@ -77,3 +77,4 @@ copy_or_combine_archives() {
 
 copy_or_combine_archives libcubacadabra_client.a "$output_dir/libcubacadabra_engine.a"
 copy_or_combine_archives libcubacadabra_app.a "$output_dir/libcubacadabra_app.a"
+cp "$rust_repo_dir/include/cubacadabra_app.h" "$output_dir/cubacadabra_app.h"

@@ -19,6 +19,9 @@ final class GameViewModel: ObservableObject {
     @Published var usernameStatus = "Choose a name other players can find you by."
     @Published var isAuthenticated = false
     @Published var authUser: AppAuthUser?
+    let appRuntime = AppRuntimeBridge()
+    @Published var appSnapshot: AppRuntimeSnapshot
+    var appRequests: [UInt32: Task<Void, Never>] = [:]
     @Published var isSigningIn = false
     @Published var authenticationNotice: String?
     @Published var myCubeRequestID = 0
@@ -70,6 +73,7 @@ final class GameViewModel: ObservableObject {
     var gamePaused = false
 
     init() {
+        appSnapshot = appRuntime.snapshot()
         // iOS can retain Keychain credentials after an app is deleted. The
         // UserDefaults marker does not survive deletion, so a missing marker
         // means this is a fresh install and the old signed-in session must not

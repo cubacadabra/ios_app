@@ -183,8 +183,7 @@ struct MainMenuView: View {
 struct AccountUsernameEditorView: View {
     @ObservedObject var model: GameViewModel
     @FocusState private var usernameFocused: Bool
-    @State private var runtime: AppRuntimeBridge?
-    @State private var profile = AppRuntimeProfileSnapshot.empty
+    private var profile: AppRuntimeProfileSnapshot { model.profileUsername }
 
     var body: some View {
         ScrollView {
@@ -210,7 +209,7 @@ struct AccountUsernameEditorView: View {
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
                         .foregroundStyle(feedback.kind == .error ? .red : .green)
                 }
-                Button { saveUsername() } label: {
+                Button { model.saveProfileUsername() } label: {
                     HStack {
                         if profile.usernameIsSaving { ProgressView().tint(.white) }
                         Text(profile.usernameIsSaving ? "SAVING…" : "SAVE USERNAME")
@@ -234,7 +233,7 @@ struct AccountUsernameEditorView: View {
         .navigationTitle("Username")
         .navigationBarTitleDisplayMode(.inline)
         .background(Color(.systemBackground).ignoresSafeArea())
-        .onAppear { startRuntime() }
+        .onAppear { model.beginProfileUsernameEdit() }
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
@@ -246,55 +245,8 @@ struct AccountUsernameEditorView: View {
     private var usernameBinding: Binding<String> {
         Binding(
             get: { profile.usernameDraft },
-            set: { value in
-                runtime?.usernameChanged(value)
-                refreshSnapshot()
-            }
+            set: { model.changeProfileUsername($0) }
         )
     }
 
-    private func startRuntime() {
-        guard runtime == nil,
-              let runtime = try? AppRuntimeBridge(username: model.authUser?.username ?? model.username) else {
-            return
-        }
-        self.runtime = runtime
-        refreshSnapshot()
-    }
-
-    private func refreshSnapshot() {
-        guard let runtime, let snapshot = try? runtime.snapshot() else { return }
-        profile = snapshot
-    }
-
-    private func saveUsername() {
-        guard let runtime else { return }
-        runtime.requestUsernameSave()
-        refreshSnapshot()
-        guard let effect = runtime.pollUsernameEffect() else {
-            usernameFocused = true
-            return
-        }
-        Task {
-            do {
-                let result = try await model.saveProfileUsername(effect.username)
-                runtime.usernameSaved(
-                    effectID: effect.id,
-                    username: result.user.username ?? effect.username
-                )
-                refreshSnapshot()
-                usernameFocused = false
-            } catch let error as AppProfileError {
-                let serverCode = switch error {
-                case .unauthorized: "not_authenticated"
-                case let .server(code, _): code ?? ""
-                }
-                runtime.usernameSaveFailed(effectID: effect.id, serverCode: serverCode)
-                refreshSnapshot()
-            } catch {
-                runtime.usernameSaveFailed(effectID: effect.id, serverCode: "")
-                refreshSnapshot()
-            }
-        }
-    }
 }

@@ -109,8 +109,21 @@ final class AppAuthenticationService: NSObject {
         try await updateProfile(path: "auth/birthday", body: ["dob": dob])
     }
 
-    func saveUsername(_ username: String) async throws -> AppProfileUpdateResult {
-        try await updateProfile(path: "auth/username", body: ["username": username])
+    // Capture credentials synchronously when draining an effect, not after a Task starts.
+    func appRequest(_ effect: AppRuntimeHttpEffect) throws -> URLRequest {
+        guard let tokens = loadTokens() else { throw AppProfileError.unauthorized }
+        var request = URLRequest(url: ClientConfiguration.backendAPIURL.appendingPathComponent(effect.path))
+        request.httpMethod = effect.method
+        request.setValue("Bearer \(tokens.accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = Data(effect.body.utf8)
+        request.timeoutInterval = 20
+        return request
+    }
+
+    func performAppRequest(_ request: URLRequest) async throws -> (Int, String) {
+        let (data, response) = try await send(request)
+        return (response.statusCode, String(data: data, encoding: .utf8) ?? "")
     }
 
     func saveAvatar(bodyID: String) async throws -> AppProfileUpdateResult {

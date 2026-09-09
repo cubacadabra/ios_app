@@ -61,6 +61,7 @@ extension GameViewModel {
         hasEnteredGame = false
         isAuthenticated = false
         authUser = nil
+        replaceAppSession()
         authenticationNotice = nil
         username = worldSocket.username
         engine?.setUsername(username)
@@ -143,34 +144,31 @@ extension GameViewModel {
     }
 
     func saveBirthday(_ dob: String) async throws -> AppProfileUpdateResult {
+        let sessionID = appSnapshot.sessionId
         let result = try await authentication.saveBirthday(dob)
-        authUser = result.user
-        return result
-    }
-
-    func saveProfileUsername(_ value: String) async throws -> AppProfileUpdateResult {
-        let result = try await authentication.saveUsername(value)
-        applyProfileUpdate(result)
-        return result
+        guard appSnapshot.sessionId == sessionID, var user = authUser, user.id == result.user.id else {
+            throw AppProfileError.unauthorized
+        }
+        user.dateOfBirth = result.user.dateOfBirth
+        authUser = user
+        return AppProfileUpdateResult(user: user, age: result.age)
     }
 
     func saveMorph(_ bodyID: String) async throws -> AppProfileUpdateResult {
+        let sessionID = appSnapshot.sessionId
         let result = try await authentication.saveAvatar(bodyID: bodyID)
-        authUser = result.user
-        return result
-    }
-
-    private func applyProfileUpdate(_ result: AppProfileUpdateResult) {
-        authUser = result.user
-        guard let nextUsername = result.user.username, !nextUsername.isEmpty else { return }
-        username = nextUsername
-        worldSocket.adoptUsername(nextUsername)
-        engine?.setUsername(nextUsername)
+        guard appSnapshot.sessionId == sessionID, var user = authUser, user.id == result.user.id else {
+            throw AppProfileError.unauthorized
+        }
+        user.bodyID = result.user.bodyID
+        authUser = user
+        return AppProfileUpdateResult(user: user, age: result.age)
     }
 
     internal func applyAuthentication(_ result: AppAuthResult) {
         isAuthenticated = true
         authUser = result.user
+        replaceAppSession()
         authenticationNotice = nil
         engine?.setAuthenticated(true)
         worldSocket.setAccessToken(result.accessToken)
@@ -184,6 +182,7 @@ extension GameViewModel {
     internal func clearAuthentication() {
         isAuthenticated = false
         authUser = nil
+        replaceAppSession()
         engine?.setAuthenticated(false)
         worldSocket.setAccessToken(Optional<String>.none)
     }
