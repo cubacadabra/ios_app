@@ -84,16 +84,15 @@ extension GameViewModel {
 
     internal func handleSessionEvent(_ event: WorldSessionEvent) {
         guard event.playerID == worldSocket.playerID else { return }
-        isAuthenticated = event.loggedIn
-        if !event.loggedIn {
-            authUser = nil
-            replaceAppSession()
+        if !event.loggedIn, accountSession.accountID != nil {
+            onSessionRejected?(accountSession.sessionID)
         }
         if let serverUsername = event.username, (event.hasUsername || !event.loggedIn), !serverUsername.isEmpty {
             username = serverUsername
             engine?.setUsername(serverUsername)
         }
         if let appearance = event.appearance {
+            serverAppearance = appearance
             let localAppearance = WorldAppearance(version: appearance.version, body: appearance.body, face: appearance.face, outfit: appearance.outfit, equipment: appearance.equipment, colors: appearance.colors, revision: max(appearance.revision ?? 0, (engine?.appearanceRevision ?? 0) + 1))
             if let data = try? JSONEncoder().encode(localAppearance), let source = String(data: data, encoding: .utf8) { _ = engine?.setLocalAppearance(source) }
         }
@@ -160,7 +159,6 @@ extension GameViewModel {
         moderationNotice = nil
     }
 
-    func dismissAuthenticationNotice() { authenticationNotice = nil }
 
     private func defaultPlayerLabel(_ playerID: String) -> String {
         let platform = playerID.hasPrefix("ios-") ? "iOS" : playerID.hasPrefix("web-") ? "Web" : "Player"

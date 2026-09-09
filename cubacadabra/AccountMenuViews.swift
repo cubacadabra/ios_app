@@ -1,7 +1,9 @@
 import SwiftUI
 
 struct MainMenuView: View {
-    @ObservedObject var model: GameViewModel
+    @ObservedObject var model: AppViewModel
+    let safetyDestination: SafetyCenterView
+    @State private var isOpeningGame = false
     let openGame: (GameCatalogEntry) async throws -> Void
     @Environment(\.colorScheme) private var colorScheme
     @State private var gameError: String?
@@ -39,7 +41,7 @@ struct MainMenuView: View {
                     }
                     Divider().padding(.leading, 60)
                     NavigationLink {
-                        MoreCubesView(model: model, openGame: openGame)
+                        MoreCubesView(openGame: openGame)
                     } label: {
                         menuRow(icon: "ellipsis.circle", title: "More", detail: "Browse uploaded cubes")
                     }
@@ -60,7 +62,7 @@ struct MainMenuView: View {
                     NavigationLink {
                         AccountUsernameEditorView(model: model)
                     } label: {
-                        menuRow(icon: "person.crop.circle", title: "Change your username", detail: model.username.isEmpty ? "Player" : model.username)
+                        menuRow(icon: "person.crop.circle", title: "Change your username", detail: model.authUser?.username ?? "Player")
                     }
                     Divider().padding(.leading, 60)
                     NavigationLink {
@@ -70,7 +72,7 @@ struct MainMenuView: View {
                     }
                     Divider().padding(.leading, 60)
                     NavigationLink {
-                        SafetyCenterView(model: model)
+                        safetyDestination
                     } label: {
                         menuRow(icon: "checkmark.shield", title: "Block or unblock players", detail: "Players & safety")
                     }
@@ -118,9 +120,11 @@ struct MainMenuView: View {
 
     private func cubeRow(_ game: GameCatalogEntry) -> some View {
         Button {
-            guard !model.isSelectingGame else { return }
+            guard !isOpeningGame else { return }
             gameError = nil
+            isOpeningGame = true
             Task {
+                defer { isOpeningGame = false }
                 do { try await openGame(game) }
                 catch { gameError = gameSelectionErrorMessage(for: error) }
             }
@@ -139,7 +143,7 @@ struct MainMenuView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                if model.isSelectingGame { ProgressView() }
+                if isOpeningGame { ProgressView() }
                 else { Image(systemName: "chevron.right").font(.system(size: 13, weight: .bold)).foregroundStyle(.secondary) }
             }
             .contentShape(Rectangle())
@@ -181,7 +185,7 @@ struct MainMenuView: View {
 }
 
 struct AccountUsernameEditorView: View {
-    @ObservedObject var model: GameViewModel
+    @ObservedObject var model: AppViewModel
     @FocusState private var usernameFocused: Bool
     private var profile: AppRuntimeProfileSnapshot { model.profileUsername }
 

@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct MoreCubesView: View {
-    @ObservedObject var model: GameViewModel
     let openGame: (GameCatalogEntry) async throws -> Void
 
     @State private var cubes: [GameCatalogEntry] = []
@@ -69,7 +68,7 @@ struct MoreCubesView: View {
 
     private func cubeRow(_ cube: GameCatalogEntry) -> some View {
         Button {
-            guard selectingCatalogID == nil, !model.isSelectingGame else { return }
+            guard selectingCatalogID == nil else { return }
             selectingCatalogID = cube.catalogID
             errorMessage = nil
             Task {
@@ -110,7 +109,7 @@ struct MoreCubesView: View {
             .frame(minHeight: 76)
         }
         .buttonStyle(.plain)
-        .disabled(selectingCatalogID != nil || model.isSelectingGame)
+        .disabled(selectingCatalogID != nil)
         .accessibilityHint("Downloads and opens the \(cube.title) lobby")
     }
 

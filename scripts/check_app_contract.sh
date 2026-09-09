@@ -16,3 +16,14 @@ xcrun swiftc -parse-as-library \
     "$rust_dir/target/debug/libcubacadabra_app.a" \
     -o "$check_dir/check-app-contract"
 "$check_dir/check-app-contract" "$rust_dir/crates/app/tests/username-contract.json"
+xcrun swiftc -parse-as-library \
+    -import-objc-header "$rust_dir/include/cubacadabra_app.h" \
+    "$project_dir/cubacadabra/AppRuntimeBridge.swift" \
+    "$project_dir/cubacadabra/AppAuthenticationModels.swift" \
+    "$project_dir/cubacadabra/AppViewModel.swift" \
+    "$project_dir/cubacadabra/AppViewModel+AppRuntime.swift" \
+    "$project_dir/cubacadabra/AppViewModel+Profile.swift" \
+    "$project_dir/scripts/check_app_lifecycle.swift" \
+    "$rust_dir/target/debug/libcubacadabra_app.a" \
+    -o "$check_dir/check-app-lifecycle"
+"$check_dir/check-app-lifecycle"

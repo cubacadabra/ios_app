@@ -31,8 +31,9 @@ final class AppAuthenticationService: NSObject {
         do {
             return try await authenticatedResult(using: storedTokens)
         } catch {
+            guard !Task.isCancelled else { return nil }
             guard let refreshed = try? await refresh(storedTokens.refreshToken) else {
-                clearTokens()
+                if !Task.isCancelled { clearTokens() }
                 return nil
             }
             return refreshed
@@ -60,6 +61,7 @@ final class AppAuthenticationService: NSObject {
         }
 
         let result = try await exchange(code: code)
+        try Task.checkCancellation()
         saveTokens(accessToken: result.accessToken, refreshToken: result.refreshToken)
         return result
     }
@@ -92,6 +94,7 @@ final class AppAuthenticationService: NSObject {
 
     func authenticateGoogle(credential: String) async throws -> AppAuthResult {
         let result = try await tokenRequest(path: "auth/app/google", body: ["credential": credential])
+        try Task.checkCancellation()
         saveTokens(accessToken: result.accessToken, refreshToken: result.refreshToken)
         return result
     }
@@ -101,6 +104,7 @@ final class AppAuthenticationService: NSObject {
             path: "auth/app/email",
             body: ["email": email, "password": password]
         )
+        try Task.checkCancellation()
         saveTokens(accessToken: result.accessToken, refreshToken: result.refreshToken)
         return result
     }
@@ -145,6 +149,7 @@ final class AppAuthenticationService: NSObject {
             path: "auth/app/refresh",
             body: ["refresh_token": refreshToken]
         )
+        try Task.checkCancellation()
         saveTokens(accessToken: result.accessToken, refreshToken: result.refreshToken)
         return result
     }

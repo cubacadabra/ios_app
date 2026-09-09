@@ -74,18 +74,6 @@ struct GameSurface: View {
                         .transition(.opacity)
                         .zIndex(2)
                 }
-                if model.isSigningIn {
-                    AuthenticationProgressView()
-                        .transition(.opacity)
-                        .zIndex(3)
-                }
-                if let notice = model.authenticationNotice {
-                    AuthenticationNoticeView(message: notice) {
-                        model.dismissAuthenticationNotice()
-                    }
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .zIndex(4)
-                }
                 if proxy.size.height > proxy.size.width * 1.25 {
                     PortraitGameNotice()
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

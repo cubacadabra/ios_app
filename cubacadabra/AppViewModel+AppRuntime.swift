@@ -1,6 +1,6 @@
 import Foundation
 
-extension GameViewModel {
+extension AppViewModel {
     var profileUsername: AppRuntimeProfileSnapshot { appSnapshot.profile }
 
     func beginProfileUsernameEdit() { dispatchApp(["type": "begin_username_edit"]) }
@@ -18,6 +18,7 @@ extension GameViewModel {
     }
 
     private func dispatchApp(_ action: [String: Any]) {
+        profileRevision &+= 1
         appRuntime.dispatch(action)
         appSnapshot = appRuntime.snapshot()
         // Only accepted Rust state can change the host profile. Other profile
@@ -26,11 +27,7 @@ extension GameViewModel {
            user.username != appSnapshot.profile.username {
             user.username = appSnapshot.profile.username
             authUser = user
-            if let name = user.username {
-                username = name
-                worldSocket.adoptUsername(name)
-                engine?.setUsername(name)
-            }
+            publishGameSession()
         }
         while let effect = appRuntime.pollEffect() {
             guard effect.accountId == authUser?.id else {

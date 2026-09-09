@@ -21,7 +21,7 @@ struct MorphOption: Identifiable, Hashable {
 }
 
 struct MorphSelectionView: View {
-    @ObservedObject var model: GameViewModel
+    @ObservedObject var model: AppViewModel
     @State private var selectedMorphID = MorphOption.fallback.id
     @State private var isSaving = false
     @State private var message: String?

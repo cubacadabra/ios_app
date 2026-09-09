@@ -20,7 +20,7 @@ struct LoadingView: View {
             Color(red: 0.10, green: 0.18, blue: 0.21).ignoresSafeArea()
             VStack(spacing: 14) {
                 ProgressView().tint(.white)
-                Text("LOADING FIRST GAME")
+                Text("RESTORING ACCOUNT")
                     .font(.system(size: 12, weight: .bold, design: .rounded))
                     .tracking(1.4)
                     .foregroundStyle(.white.opacity(0.76))

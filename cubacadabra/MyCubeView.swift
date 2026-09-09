@@ -2,8 +2,9 @@ import Foundation
 import SwiftUI
 
 struct MyCubeView: View {
-    @ObservedObject var model: GameViewModel
-    let enterGame: (GameCatalogEntry) -> Void
+    @ObservedObject var model: AppViewModel
+    let selectedGameID: String?
+    let enterGame: (GameCatalogEntry) async throws -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @State private var step: MyCubeStep
@@ -40,8 +41,9 @@ struct MyCubeView: View {
         case username
     }
 
-    init(model: GameViewModel, enterGame: @escaping (GameCatalogEntry) -> Void) {
+    init(model: AppViewModel, selectedGameID: String? = nil, enterGame: @escaping (GameCatalogEntry) async throws -> Void) {
         self.model = model
+        self.selectedGameID = selectedGameID
         self.enterGame = enterGame
         let initialStep: MyCubeStep
         if let dob = model.authUser?.dateOfBirth,
@@ -392,7 +394,7 @@ struct MyCubeView: View {
                     ProgressView()
                         .tint(coral)
                         .accessibilityLabel("Opening \(game.id)")
-                } else if model.selectedGameID == game.id {
+                } else if selectedGameID == game.id {
                     Text("CURRENT")
                         .font(.system(size: 10, weight: .bold, design: .rounded))
                         .tracking(0.8)
@@ -418,9 +420,8 @@ struct MyCubeView: View {
         selectingGameID = game.id
         Task {
             do {
-                try await model.selectGame(game)
+                try await enterGame(game)
                 dismiss()
-                enterGame(game)
             } catch {
                 selectingGameID = nil
                 gameSelectionError = Self.gameSelectionErrorMessage(for: error)

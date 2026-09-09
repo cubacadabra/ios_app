@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor
 struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var appModel = AppViewModel()
     @StateObject private var model: GameViewModel
     @StateObject private var orientationController: AppOrientationController
     @State private var gamePresented = false
@@ -31,8 +32,25 @@ struct ContentView: View {
             }
         }
         .task {
-            await model.load()
-            autoEnterGuestGameIfReady()
+            model.onAccountRequested = {
+                appModel.clearAuthenticationNotice()
+                gamePresented = false
+            }
+            model.onSessionRejected = { appModel.gameSessionRejected($0) }
+            await appModel.start()
+            model.applyAccountSession(appModel.gameSession)
+            if !appModel.isAuthenticated {
+                await model.load()
+                autoEnterGuestGameIfReady()
+            }
+        }
+        .onReceive(appModel.$gameSession) { session in
+            model.applyAccountSession(session)
+        }
+        .onChange(of: appModel.authUser?.id) { _ in gamePresented = false }
+        .onChange(of: appModel.logoutRequestID) { _ in
+            gamePresented = false
+            Task { await openGuestGame() }
         }
         .onReceive(tick) { date in
             if gamePresented { model.tick(at: date) }
@@ -47,10 +65,6 @@ struct ContentView: View {
             guard gamePresented else { return }
             gamePresented = false
         }
-        .onChange(of: model.guestGameRequestID) { _ in
-            guard !model.isLoading, model.errorMessage == nil else { return }
-            gamePresented = true
-        }
         .onChange(of: gamePresented) { isPresented in
             orientationController.setGameActive(isPresented)
             if isPresented {
@@ -61,7 +75,7 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { phase in
             guard phase == .active else { return }
-            model.refreshAuthentication()
+            appModel.refreshAuthentication()
         }
         .onDisappear { model.disconnect() }
         .sheet(isPresented: $safetyCenterPresented) {
@@ -69,11 +83,27 @@ struct ContentView: View {
         }
     }
 
+    private func openGuestGame() async {
+        let sessionID = appModel.gameSession.sessionID
+        do {
+            try await model.selectGame(GameCatalogEntry.available[0])
+            guard sessionID == appModel.gameSession.sessionID, !appModel.isAuthenticated else { return }
+            gamePresented = true
+        } catch is CancellationError {
+            return
+        } catch {
+            guard sessionID == appModel.gameSession.sessionID else { return }
+            model.errorMessage = error.localizedDescription
+            model.isLoading = false
+        }
+    }
+
     private func autoEnterGuestGameIfReady() {
-        guard !model.isAuthenticated,
+        guard !appModel.isRestoring, !appModel.isAuthenticated, !appModel.isSigningIn,
               !didAutoEnterGuestGame,
               !model.isLoading,
               model.errorMessage == nil,
+              model.engine != nil,
               !gamePresented else { return }
         didAutoEnterGuestGame = true
         gamePresented = true
@@ -81,19 +111,34 @@ struct ContentView: View {
 
     @ViewBuilder
     private var rootView: some View {
-        if model.isLoading {
+        if appModel.isRestoring {
             LoadingView()
-        } else if let message = model.errorMessage {
-            ErrorView(message: message, retry: model.retry)
-        } else if !model.isAuthenticated {
-            SignInChoiceView(model: model)
-        } else if model.needsBirthday {
-            BirthdayGateView(model: model)
-        } else if model.isUnderThirteen {
-            ParentEmailGateView(model: model)
+        } else if !appModel.isAuthenticated {
+            SignInChoiceView(model: appModel, onInteraction: { didAutoEnterGuestGame = true })
+                .safeAreaInset(edge: .bottom) {
+                    if model.errorMessage != nil {
+                        VStack(spacing: 8) {
+                            Text("The game couldn’t load. You can still sign in.")
+                                .font(.footnote)
+                            Button("Retry game") {
+                                Task { await openGuestGame() }
+                            }
+                            .disabled(model.isSelectingGame)
+                        }
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(.regularMaterial)
+                    }
+                }
+        } else if appModel.needsBirthday {
+            BirthdayGateView(model: appModel)
+        } else if appModel.isUnderThirteen {
+            ParentEmailGateView(model: appModel)
         } else {
-            MainMenuView(model: model) { game in
+            MainMenuView(model: appModel, safetyDestination: SafetyCenterView(model: model)) { game in
+                let sessionID = appModel.gameSession.sessionID
                 try await model.selectGame(game)
+                guard sessionID == appModel.gameSession.sessionID else { return }
                 gamePresented = true
             }
         }

@@ -17,14 +17,10 @@ final class GameViewModel: ObservableObject {
     @Published var presenceNotice: PresenceNotice?
     @Published var username = ""
     @Published var usernameStatus = "Choose a name other players can find you by."
-    @Published var isAuthenticated = false
-    @Published var authUser: AppAuthUser?
-    let appRuntime = AppRuntimeBridge()
-    @Published var appSnapshot: AppRuntimeSnapshot
-    var appRequests: [UInt32: Task<Void, Never>] = [:]
-    @Published var isSigningIn = false
-    @Published var authenticationNotice: String?
-    @Published var myCubeRequestID = 0
+    var accountSession = AppGameSession()
+    var serverAppearance: WorldAppearance?
+    var onAccountRequested: (() -> Void)?
+    var onSessionRejected: ((UInt32) -> Void)?
     @Published var settingsRoomState: UInt8 = 0
     @Published var usernameEditorOpen = false
     @Published var safetyRequestID = 0
@@ -32,7 +28,6 @@ final class GameViewModel: ObservableObject {
     @Published var blockedPlayerIDs: Set<String>
     @Published var moderationNotice: ModerationNotice?
     @Published var gameExitRequestID = 0
-    @Published var guestGameRequestID = 0
     @Published var buildPrompt = ""
     @Published var buildPhase = "build"
     @Published var buildBlockCount = 0
@@ -47,15 +42,11 @@ final class GameViewModel: ObservableObject {
     @Published var selectedGameID = "first-game"
     @Published var selectedGame = GameCatalogEntry.available[0]
     @Published var isSelectingGame = false
-    var isFreshInstall = false
     @Published var sprinting = false
     @Published var climbing = false
 
     let loader = GamePackageLoader()
-    let authentication = AppAuthenticationService()
-    let googleSignIn = NativeGoogleSignInService()
     let gameAudio = GameAudio()
-    let installationMarkerKey = "cubacadabra.installation-marker"
     let blockedPlayerIDsKey = "cubacadabra.blocked-player-ids"
     var engine: EngineBridge?
     var lastTick: Date?
@@ -71,22 +62,9 @@ final class GameViewModel: ObservableObject {
     var moderationNoticeTask: Task<Void, Never>?
     var buildActionNoticeTask: Task<Void, Never>?
     var gamePaused = false
+    var gameLoadGeneration: UInt64 = 0
 
     init() {
-        appSnapshot = appRuntime.snapshot()
-        // iOS can retain Keychain credentials after an app is deleted. The
-        // UserDefaults marker does not survive deletion, so a missing marker
-        // means this is a fresh install and the old signed-in session must not
-        // put the user straight back into an under-13 gate.
-        isFreshInstall = UserDefaults.standard.string(forKey: installationMarkerKey) == nil
-        let hasLocalInstallData = UserDefaults.standard.string(forKey: "cubacadabra.player-id") != nil
-        if isFreshInstall {
-            UserDefaults.standard.set(UUID().uuidString, forKey: installationMarkerKey)
-            if !hasLocalInstallData {
-                authentication.clearTokens()
-                googleSignIn.signOut()
-            }
-        }
         let storedIDs = UserDefaults.standard.stringArray(forKey: blockedPlayerIDsKey) ?? []
         blockedPlayerIDs = Set(storedIDs)
     }
@@ -128,11 +106,14 @@ final class GameViewModel: ObservableObject {
             connectWorld(worldID)
             return
         }
+        gameLoadGeneration &+= 1
+        let generation = gameLoadGeneration
         isLoading = true
         errorMessage = nil
         do {
             let firstGame = GameCatalogEntry.available[0]
             let loaded = try await loader.load(gameID: firstGame.id, packageBaseURL: firstGame.packageBaseURL)
+            guard generation == gameLoadGeneration, !Task.isCancelled else { return }
             let loadedPackage = loaded.package
             guard loadedPackage.worldDefinition(named: loadedPackage.initialWorld) != nil else {
                 throw GamePackageError.missingWorld(loadedPackage.initialWorld)
@@ -144,7 +125,7 @@ final class GameViewModel: ObservableObject {
             selectedGameID = firstGame.id
             selectedGame = firstGame
             username = worldSocket.username
-            loadedEngine.setUsername(username)
+            loadedEngine.setUsername(accountSession.username ?? username)
             engine = loadedEngine
             let initialFrame = loadedEngine.frame()
             worldID = runtimeWorldIDs[safe: initialFrame.activeWorldIndex] ?? loadedPackage.initialWorld
@@ -153,14 +134,12 @@ final class GameViewModel: ObservableObject {
             frame = initialFrame
             lastTick = nil
             isLoading = false
-            if let authResult = await authentication.restore() {
-                applyAuthentication(authResult)
-            }
             Task { [weak self] in
                 await self?.loader.refreshPackage(gameID: "first-game")
                 await self?.refreshBlockedPlayers()
             }
         } catch {
+            guard generation == gameLoadGeneration, !Task.isCancelled else { return }
             gameLog.error("Game load failed: \(error.localizedDescription, privacy: .public)")
             isLoading = false
             errorMessage = error.localizedDescription
@@ -175,18 +154,6 @@ final class GameViewModel: ObservableObject {
         frame = nil
         hasEnteredGame = false
         Task { await load() }
-    }
-
-    func refreshAuthentication() {
-        guard engine != nil else { return }
-        Task { [weak self] in
-            guard let self else { return }
-            if let authResult = await authentication.restore() {
-                applyAuthentication(authResult)
-            } else {
-                clearAuthentication()
-            }
-        }
     }
 
     func tick(at date: Date) {
@@ -338,10 +305,15 @@ final class GameViewModel: ObservableObject {
         }
         guard selectedGame.catalogID != game.catalogID || package == nil else { return }
 
+        gameLoadGeneration &+= 1
+        let generation = gameLoadGeneration
+        isLoading = false
         isSelectingGame = true
-        defer { isSelectingGame = false }
+        defer { if generation == gameLoadGeneration { isSelectingGame = false } }
 
         let loaded = try await loader.load(gameID: game.id, packageBaseURL: game.packageBaseURL)
+        guard generation == gameLoadGeneration else { throw CancellationError() }
+        try Task.checkCancellation()
         let nextEngine = try makeEngine(from: loaded)
         let nextPackage = loaded.package
 
@@ -351,6 +323,7 @@ final class GameViewModel: ObservableObject {
         gameAudio.configure(with: loaded.audioAssets)
         engine = nextEngine
         package = nextPackage
+        errorMessage = nil
         selectedGameID = game.id
         selectedGame = game
         runtimeWorldIDs = nextPackage.runtimeWorldEntries().map(\.id)
@@ -442,8 +415,9 @@ final class GameViewModel: ObservableObject {
         )
         loadedEngine.setPackageImageAtlas(imageAtlas)
         loadedEngine.setIgnoredPlayerIDs(blockedPlayerIDs)
-        loadedEngine.setAuthenticated(isAuthenticated)
-        loadedEngine.setUsername(username)
+        loadedEngine.setAuthenticated(accountSession.accountID != nil)
+        applyAccountAppearance(to: loadedEngine)
+        loadedEngine.setUsername(accountSession.username ?? username)
         gameLog.info("Rust package and script loaded; UI nodes: \(loadedEngine.uiNodeCount, privacy: .public)")
         return loadedEngine
     }

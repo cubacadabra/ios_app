@@ -4,7 +4,8 @@ let cubacadabraCoral = Color(red: 0.91, green: 0.39, blue: 0.29)
 let cubacadabraInk = Color(red: 0.15, green: 0.29, blue: 0.29)
 
 struct SignInChoiceView: View {
-    @ObservedObject var model: GameViewModel
+    @ObservedObject var model: AppViewModel
+    var onInteraction: () -> Void = {}
     @Environment(\.colorScheme) private var colorScheme
     @FocusState private var focusedField: Field?
     @State private var emailMode = false
@@ -107,6 +108,7 @@ struct SignInChoiceView: View {
                         .foregroundStyle(.secondary)
 
                     Button {
+                        onInteraction()
                         model.signInWithGoogle()
                     } label: {
                         HStack(spacing: 12) {
@@ -130,6 +132,7 @@ struct SignInChoiceView: View {
                     .disabled(model.isSigningIn)
 
                     Button {
+                        onInteraction()
                         model.clearAuthenticationNotice()
                         emailMode = true
                     } label: {
@@ -181,7 +184,7 @@ struct SignInChoiceView: View {
 }
 
 struct BirthdayGateView: View {
-    @ObservedObject var model: GameViewModel
+    @ObservedObject var model: AppViewModel
     @Environment(\.colorScheme) private var colorScheme
     @State private var birthday = BirthdayGateView.defaultBirthday
     @State private var isSaving = false
@@ -284,7 +287,7 @@ struct BirthdayGateView: View {
 }
 
 struct ParentEmailGateView: View {
-    @ObservedObject var model: GameViewModel
+    @ObservedObject var model: AppViewModel
     @Environment(\.colorScheme) private var colorScheme
     @FocusState private var emailFocused: Bool
     @State private var email = ""
