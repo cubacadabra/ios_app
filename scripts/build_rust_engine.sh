@@ -7,7 +7,8 @@ case "$rust_repo_path" in
   /*) rust_repo_dir="$rust_repo_path" ;;
   *) rust_repo_dir="$project_dir/$rust_repo_path" ;;
 esac
-manifest_path="$rust_repo_dir/crates/client/Cargo.toml"
+client_manifest_path="$rust_repo_dir/crates/client/Cargo.toml"
+app_manifest_path="$rust_repo_dir/crates/app/Cargo.toml"
 output_dir="${DERIVED_FILE_DIR:-$project_dir/rust/build}/cubacadabra-engine"
 cargo_target_dir="${CARGO_TARGET_DIR:-${DERIVED_FILE_DIR:-$project_dir/rust/build}/rust-target}"
 rust_profile=debug
@@ -49,20 +50,30 @@ case "${PLATFORM_NAME:-iphonesimulator}" in
   *) echo "Unsupported Rust platform: ${PLATFORM_NAME:-unknown}" >&2; exit 1 ;;
 esac
 
-set --
 for rust_target in $rust_targets; do
   if ! $rustc_command --print target-libdir --target "$rust_target" >/dev/null 2>&1; then
     rustup target add "$rust_target"
   fi
-  CARGO_TARGET_DIR="$cargo_target_dir" $cargo_command build --manifest-path "$manifest_path" --target "$rust_target" --features metal $cargo_profile_args
-  set -- "$@" "$cargo_target_dir/$rust_target/$rust_profile/libcubacadabra_client.a"
+  CARGO_TARGET_DIR="$cargo_target_dir" $cargo_command build --manifest-path "$client_manifest_path" --target "$rust_target" --features metal $cargo_profile_args
+  CARGO_TARGET_DIR="$cargo_target_dir" $cargo_command build --manifest-path "$app_manifest_path" --target "$rust_target" $cargo_profile_args
 done
 
-if [ "$#" -eq 0 ]; then
-  echo "No Rust library was built for PLATFORM_NAME=${PLATFORM_NAME:-unknown}, ARCHS=${ARCHS:-unknown}." >&2
-  exit 1
-elif [ "$#" -eq 1 ]; then
-  cp "$1" "$output_dir/libcubacadabra_engine.a"
-else
-  lipo -create "$@" -output "$output_dir/libcubacadabra_engine.a"
-fi
+copy_or_combine_archives() {
+  archive_name="$1"
+  output_path="$2"
+  set --
+  for rust_target in $rust_targets; do
+    set -- "$@" "$cargo_target_dir/$rust_target/$rust_profile/$archive_name"
+  done
+  if [ "$#" -eq 0 ]; then
+    echo "No Rust library was built for PLATFORM_NAME=${PLATFORM_NAME:-unknown}, ARCHS=${ARCHS:-unknown}." >&2
+    exit 1
+  elif [ "$#" -eq 1 ]; then
+    cp "$1" "$output_path"
+  else
+    lipo -create "$@" -output "$output_path"
+  fi
+}
+
+copy_or_combine_archives libcubacadabra_client.a "$output_dir/libcubacadabra_engine.a"
+copy_or_combine_archives libcubacadabra_app.a "$output_dir/libcubacadabra_app.a"

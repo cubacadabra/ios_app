@@ -183,10 +183,8 @@ struct MainMenuView: View {
 struct AccountUsernameEditorView: View {
     @ObservedObject var model: GameViewModel
     @FocusState private var usernameFocused: Bool
-    @State private var username = ""
-    @State private var isSaving = false
-    @State private var message: String?
-    @State private var messageIsError = false
+    @State private var runtime: AppRuntimeBridge?
+    @State private var profile = AppRuntimeProfileSnapshot.empty
 
     var body: some View {
         ScrollView {
@@ -196,7 +194,7 @@ struct AccountUsernameEditorView: View {
                     .foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 9) {
                     Text("USERNAME").font(.system(size: 12, weight: .bold, design: .rounded)).tracking(1.4).foregroundStyle(.secondary)
-                    TextField("Your username", text: $username)
+                    TextField("Your username", text: usernameBinding)
                         .textContentType(.username)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -207,15 +205,15 @@ struct AccountUsernameEditorView: View {
                         .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                 }
                 Text("Use 2–24 letters, numbers, _ or -.").font(.system(size: 14, weight: .medium, design: .rounded)).foregroundStyle(.secondary)
-                if let message {
-                    Label(message, systemImage: messageIsError ? "exclamationmark.circle" : "checkmark.circle")
+                if let feedback = profile.usernameFeedback {
+                    Label(feedback.message, systemImage: feedback.kind == .error ? "exclamationmark.circle" : "checkmark.circle")
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
-                        .foregroundStyle(messageIsError ? .red : .green)
+                        .foregroundStyle(feedback.kind == .error ? .red : .green)
                 }
                 Button { saveUsername() } label: {
                     HStack {
-                        if isSaving { ProgressView().tint(.white) }
-                        Text(isSaving ? "SAVING…" : "SAVE USERNAME")
+                        if profile.usernameIsSaving { ProgressView().tint(.white) }
+                        Text(profile.usernameIsSaving ? "SAVING…" : "SAVE USERNAME")
                         Spacer()
                         Image(systemName: "checkmark")
                     }
@@ -227,7 +225,7 @@ struct AccountUsernameEditorView: View {
                     .background(cubacadabraCoral, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .disabled(isSaving)
+                .disabled(!profile.usernameCanSave)
             }
             .frame(maxWidth: 560, alignment: .leading)
             .padding(.horizontal, 24)
@@ -236,7 +234,7 @@ struct AccountUsernameEditorView: View {
         .navigationTitle("Username")
         .navigationBarTitleDisplayMode(.inline)
         .background(Color(.systemBackground).ignoresSafeArea())
-        .onAppear { username = model.authUser?.username ?? model.username }
+        .onAppear { startRuntime() }
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
@@ -245,36 +243,57 @@ struct AccountUsernameEditorView: View {
         }
     }
 
+    private var usernameBinding: Binding<String> {
+        Binding(
+            get: { profile.usernameDraft },
+            set: { value in
+                runtime?.usernameChanged(value)
+                refreshSnapshot()
+            }
+        )
+    }
+
+    private func startRuntime() {
+        guard runtime == nil,
+              let runtime = try? AppRuntimeBridge(username: model.authUser?.username ?? model.username) else {
+            return
+        }
+        self.runtime = runtime
+        refreshSnapshot()
+    }
+
+    private func refreshSnapshot() {
+        guard let runtime, let snapshot = try? runtime.snapshot() else { return }
+        profile = snapshot
+    }
+
     private func saveUsername() {
-        let normalized = username.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard normalized.count >= 2, normalized.count <= 24, normalized.range(of: "^[A-Za-z0-9_-]+$", options: .regularExpression) != nil else {
-            message = "Use 2–24 letters, numbers, _ or -."
-            messageIsError = true
+        guard let runtime else { return }
+        runtime.requestUsernameSave()
+        refreshSnapshot()
+        guard let effect = runtime.pollUsernameEffect() else {
             usernameFocused = true
             return
         }
-        isSaving = true
-        message = nil
         Task {
             do {
-                _ = try await model.saveProfileUsername(normalized)
-                username = normalized
-                isSaving = false
-                message = "Username saved."
-                messageIsError = false
+                let result = try await model.saveProfileUsername(effect.username)
+                runtime.usernameSaved(
+                    effectID: effect.id,
+                    username: result.user.username ?? effect.username
+                )
+                refreshSnapshot()
                 usernameFocused = false
             } catch let error as AppProfileError {
-                isSaving = false
-                message = switch error.errorCode {
-                case "username_taken": "That username is already in use. Try another."
-                case "username_not_allowed": "That username isn’t available. Try another."
-                default: "We couldn’t save your username. Please try again."
+                let serverCode = switch error {
+                case .unauthorized: "not_authenticated"
+                case let .server(code, _): code ?? ""
                 }
-                messageIsError = true
+                runtime.usernameSaveFailed(effectID: effect.id, serverCode: serverCode)
+                refreshSnapshot()
             } catch {
-                isSaving = false
-                message = "We couldn’t save your username. Please try again."
-                messageIsError = true
+                runtime.usernameSaveFailed(effectID: effect.id, serverCode: "")
+                refreshSnapshot()
             }
         }
     }

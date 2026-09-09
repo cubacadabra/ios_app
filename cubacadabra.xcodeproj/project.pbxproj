@@ -134,12 +134,14 @@
 			);
 			inputPaths = (
 				"$(SRCROOT)/$(RUST_REPO_PATH)/Cargo.toml",
+				"$(SRCROOT)/$(RUST_REPO_PATH)/crates/app/Cargo.toml",
 				"$(SRCROOT)/scripts/build_rust_engine.sh",
 				"$(SRCROOT)/cubacadabra/cubacadabra_engine.h",
 			);
 			name = "Build Rust engine";
 			outputPaths = (
 				"$(DERIVED_FILE_DIR)/cubacadabra-engine/libcubacadabra_engine.a",
+				"$(DERIVED_FILE_DIR)/cubacadabra-engine/libcubacadabra_app.a",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -331,6 +333,7 @@
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-lcubacadabra_engine",
+					"-lcubacadabra_app",
 					"-framework",
 					Metal,
 					"-framework",
@@ -380,6 +383,7 @@
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-lcubacadabra_engine",
+					"-lcubacadabra_app",
 					"-framework",
 					Metal,
 					"-framework",

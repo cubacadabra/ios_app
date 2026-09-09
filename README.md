@@ -1,15 +1,15 @@
 # Cubacadabra ios app
 
 This is the Swift platform client. It loads a selected game package from a
-web host, uses the Rust static library for simulation, Luau execution, and
-Metal rendering, and connects to the backend's WebSocket world service for
-player presence and movement.
+web host, uses Rust static libraries for simulation, Luau execution, Metal
+rendering, and shared product state, and connects to the backend's WebSocket
+world service for player presence and movement.
 
 The repositories fit together like this:
 
 ```text
 game repos  -> src/ + manifest.json (source packages)
-rust        -> static library (simulation, scripting host, renderer)
+rust        -> static libraries (engine, client session, app state)
 web         -> package host and browser client
 backend     -> multiplayer Worker and world WebSockets
 ios_app     -> this Swift adapter (touch, lifecycle, MTKView, networking)
@@ -46,9 +46,9 @@ Backend:      ws://localhost:8787
 The Xcode build phases build both sibling game packages through the shared
 `tools` repository and copy their runtime files into the final app bundle under
 `games/<game-id>/manifest.json` and `games/<game-id>/game.luau`. The Rust phase
-then compiles the native engine for the selected iOS target and links the
-resulting static library. You do not need to build Rust separately for the
-normal Xcode workflow.
+then compiles the native engine and app state for the selected iOS target and
+links the resulting static libraries. You do not need to build Rust separately
+for the normal Xcode workflow.
 
 Debug builds always load those bundled packages. Release builds prefer the
 bundle over an equal or older cached package; a remotely refreshed package is
@@ -98,6 +98,7 @@ the Xcode build.
 - `cubacadabra/GamePackage.swift` — package models, URL defaults, and loader
 - `cubacadabra/WorldSocketClient.swift` — world WebSocket and reconnection
 - `cubacadabra/EngineBridge.swift` — Swift-to-Rust engine calls
+- `cubacadabra/AppRuntimeBridge.swift` — Swift-to-Rust product state and effects
 - `cubacadabra/RustGameSurface.swift` — Rust renderer in an `MTKView`
 - `cubacadabra/ContentView.swift` — app state, controls, and lifecycle
 - `scripts/build_rust_engine.sh` — native Rust build phase invoked by Xcode
