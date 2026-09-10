@@ -2,6 +2,7 @@ import Foundation
 
 extension AppViewModel {
     var profileUsername: AppRuntimeProfileSnapshot { appSnapshot.profile }
+    var catalogSnapshot: AppRuntimeCatalogSnapshot { appSnapshot.catalog }
 
     func beginProfileUsernameEdit() { dispatchApp(["type": "begin_username_edit"]) }
     func changeProfileUsername(_ value: String) { dispatchApp(["type": "username_changed", "value": value]) }
@@ -10,6 +11,9 @@ extension AppViewModel {
     func beginMorphEdit() { dispatchApp(["type": "begin_body_edit"]) }
     func changeMorph(_ bodyID: String) { dispatchApp(["type": "body_changed", "body_id": bodyID]) }
     func saveMorph() { dispatchApp(["type": "save_body"]) }
+    func loadCatalog(pageSize: Int = 20) {
+        dispatchApp(["type": "load_catalog", "page_size": pageSize])
+    }
 
     func saveBirthday(_ dateOfBirth: String) async throws -> AppProfileUpdateResult {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<AppProfileUpdateResult, Error>) in
@@ -68,7 +72,7 @@ extension AppViewModel {
             if birthdayWaiter != nil, birthdayEffectID == nil, appSnapshot.profile.birthdayIsSaving {
                 birthdayEffectID = effect.effectId
             }
-            guard effect.accountId == authUser?.id else {
+            guard effect.accountId == nil || effect.accountId == authUser?.id else {
                 dispatchApp(["type": "http_failed", "effect_id": effect.effectId])
                 continue
             }

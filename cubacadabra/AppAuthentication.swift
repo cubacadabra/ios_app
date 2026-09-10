@@ -111,10 +111,17 @@ final class AppAuthenticationService: NSObject {
 
     // Capture credentials synchronously when draining an effect, not after a Task starts.
     func appRequest(_ effect: AppRuntimeHttpEffect) throws -> URLRequest {
-        guard let tokens = loadTokens() else { throw AppProfileError.unauthorized }
-        var request = URLRequest(url: ClientConfiguration.backendAPIURL.appendingPathComponent(effect.path))
+        guard let url = URL(string: effect.path, relativeTo: ClientConfiguration.backendAPIURL)?.absoluteURL,
+              url.scheme == ClientConfiguration.backendAPIURL.scheme,
+              url.host == ClientConfiguration.backendAPIURL.host else {
+            throw AppProfileError.unavailable
+        }
+        var request = URLRequest(url: url)
         request.httpMethod = effect.method
-        request.setValue("Bearer \(tokens.accessToken)", forHTTPHeaderField: "Authorization")
+        if effect.accountId != nil {
+            guard let tokens = loadTokens() else { throw AppProfileError.unauthorized }
+            request.setValue("Bearer \(tokens.accessToken)", forHTTPHeaderField: "Authorization")
+        }
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = Data(effect.body.utf8)
         request.timeoutInterval = 20

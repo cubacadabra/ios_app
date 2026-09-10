@@ -22,7 +22,7 @@ final class AppAuthenticationService {
     var pendingRestore: Deferred<AppAuthResult?>?
     var pendingHTTP = Deferred<(Int, String)>()
     var restoreCount = 0
-    var requestAccounts: [String] = []
+    var requestAccounts: [String?] = []
     func clearTokens() {}
     func restore() async -> AppAuthResult? {
         restoreCount += 1

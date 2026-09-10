@@ -45,7 +45,7 @@ struct CheckAppContract {
                 while let effect = runtime.pollEffect() {
                     effects.append([
                         "type": effect.type, "effect_id": effect.effectId,
-                        "account_id": effect.accountId, "method": effect.method,
+                        "account_id": effect.accountId as Any? ?? NSNull(), "method": effect.method,
                         "path": effect.path, "body": effect.body,
                     ])
                 }

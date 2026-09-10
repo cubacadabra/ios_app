@@ -13,6 +13,28 @@ struct AppRuntimeBirthdayFeedback: Decodable, Equatable {
     let message: String
 }
 
+struct AppRuntimeCatalogEntry: Decodable, Equatable, Identifiable {
+    let cubeID: String
+    let version: String
+    let displayName: String
+    let packagePath: String
+    let assetBaseURL: String?
+
+    var id: String { cubeID }
+}
+
+struct AppRuntimeCatalogFeedback: Decodable, Equatable {
+    let kind: AppRuntimeFeedbackKind
+    let code: String
+    let message: String
+}
+
+struct AppRuntimeCatalogSnapshot: Decodable, Equatable {
+    let entries: [AppRuntimeCatalogEntry]
+    let isLoading: Bool
+    let feedback: AppRuntimeCatalogFeedback?
+}
+
 struct AppRuntimeProfileSnapshot: Decodable, Equatable {
     let username: String?
     let usernameDraft: String
@@ -35,12 +57,13 @@ struct AppRuntimeSnapshot: Decodable {
     let sessionId: UInt32
     let accountId: String?
     let profile: AppRuntimeProfileSnapshot
+    let catalog: AppRuntimeCatalogSnapshot
 }
 
 struct AppRuntimeHttpEffect: Decodable {
     let type: String
     let effectId: UInt32
-    let accountId: String
+    let accountId: String?
     let method: String
     let path: String
     let body: String

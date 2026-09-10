@@ -1,15 +1,45 @@
 import SwiftUI
 
 struct MoreCubesView: View {
+    @ObservedObject var model: AppViewModel
     let openGame: (GameCatalogEntry) async throws -> Void
 
-    @State private var cubes: [GameCatalogEntry] = []
-    @State private var isLoading = true
-    @State private var errorMessage: String?
     @State private var selectingCatalogID: String?
-    @State private var reloadID = UUID()
+    @State private var gameSelectionError: String?
 
-    private let service = CubeCatalogService()
+    private var cubes: [GameCatalogEntry] {
+        model.catalogSnapshot.entries.compactMap { entry in
+            #if DEBUG
+            let packagePath = entry.packagePath
+            #else
+            let packagePath = entry.assetBaseURL ?? entry.packagePath
+            #endif
+            guard let packageURL = URL(string: packagePath, relativeTo: ClientConfiguration.backendAPIURL)?.absoluteURL,
+                  packageURL.path.hasPrefix("/cubes/"),
+                  packageURL.path.hasSuffix("/"),
+                  isAllowedPackageURL(packageURL) else { return nil }
+            return GameCatalogEntry(
+                id: entry.cubeID,
+                title: entry.displayName,
+                subtitle: "\(entry.cubeID) · v\(entry.version)",
+                version: entry.version,
+                packageBaseURL: packageURL
+            )
+        }
+    }
+
+    private func isAllowedPackageURL(_ url: URL) -> Bool {
+        let backendURL = ClientConfiguration.backendAPIURL
+        let isBackendURL = url.scheme == backendURL.scheme
+            && url.host == backendURL.host
+        #if DEBUG
+        return isBackendURL
+        #else
+        return isBackendURL || (url.scheme == "https" && url.host == ClientConfiguration.publicAssetHost)
+        #endif
+    }
+
+    private var catalogError: String? { model.catalogSnapshot.feedback?.message }
 
     var body: some View {
         ScrollView {
@@ -19,7 +49,7 @@ struct MoreCubesView: View {
                     .foregroundStyle(.secondary)
                     .padding(.bottom, 22)
 
-                if isLoading {
+                if model.catalogSnapshot.isLoading {
                     HStack(spacing: 10) {
                         ProgressView()
                         Text("Loading cubes…")
@@ -28,12 +58,12 @@ struct MoreCubesView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 18)
-                } else if let errorMessage {
+                } else if let errorMessage = catalogError {
                     VStack(alignment: .leading, spacing: 12) {
                         Label(errorMessage, systemImage: "exclamationmark.circle")
                             .font(.system(size: 14, weight: .semibold, design: .rounded))
                             .foregroundStyle(.red)
-                        Button("Try again") { reloadID = UUID() }
+                        Button("Try again") { model.loadCatalog() }
                             .font(.system(size: 15, weight: .bold, design: .rounded))
                             .foregroundStyle(cubacadabraCoral)
                     }
@@ -54,6 +84,12 @@ struct MoreCubesView: View {
                     }
                     .background(.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 }
+                if let gameSelectionError {
+                    Label(gameSelectionError, systemImage: "exclamationmark.circle")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.red)
+                        .padding(.top, 10)
+                }
             }
             .frame(maxWidth: 720, alignment: .leading)
             .padding(.horizontal, 24)
@@ -63,21 +99,21 @@ struct MoreCubesView: View {
         .background(Color(.systemBackground).ignoresSafeArea())
         .navigationTitle("More")
         .navigationBarTitleDisplayMode(.inline)
-        .task(id: reloadID) { await loadCubes() }
+        .task { model.loadCatalog() }
     }
 
     private func cubeRow(_ cube: GameCatalogEntry) -> some View {
         Button {
             guard selectingCatalogID == nil else { return }
             selectingCatalogID = cube.catalogID
-            errorMessage = nil
+            gameSelectionError = nil
             Task {
                 do {
                     try await openGame(cube)
                 } catch is CancellationError {
                     // Navigation or task cancellation does not need an error message.
                 } catch {
-                    errorMessage = errorMessage(for: error)
+                    gameSelectionError = error.localizedDescription
                 }
                 selectingCatalogID = nil
             }
@@ -113,27 +149,4 @@ struct MoreCubesView: View {
         .accessibilityHint("Downloads and opens the \(cube.title) lobby")
     }
 
-    private func loadCubes() async {
-        isLoading = true
-        errorMessage = nil
-        do {
-            cubes = try await service.firstPage()
-        } catch is CancellationError {
-            return
-        } catch {
-            if !Task.isCancelled {
-                errorMessage = errorMessage(for: error)
-            }
-        }
-        if !Task.isCancelled {
-            isLoading = false
-        }
-    }
-
-    private func errorMessage(for error: Error) -> String {
-        if let packageError = error as? GamePackageError, case .httpFailure = packageError {
-            return "Cubes are unavailable right now. Check your connection and try again."
-        }
-        return "We couldn’t load the cubes. Please try again."
-    }
 }

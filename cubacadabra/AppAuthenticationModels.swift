@@ -51,6 +51,7 @@ enum AppAuthError: LocalizedError, Equatable {
 
 enum AppProfileError: LocalizedError, Equatable {
     case unauthorized
+    case unavailable
     case server(code: String?, status: Int)
 
     var errorCode: String? {
@@ -61,6 +62,7 @@ enum AppProfileError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .unauthorized: return "Your sign-in has expired. Please sign in again."
+        case .unavailable: return "The player profile is temporarily unavailable."
         case .server: return "The player profile could not be updated."
         }
     }

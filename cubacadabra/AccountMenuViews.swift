@@ -41,7 +41,7 @@ struct MainMenuView: View {
                     }
                     Divider().padding(.leading, 60)
                     NavigationLink {
-                        MoreCubesView(openGame: openGame)
+                        MoreCubesView(model: model, openGame: openGame)
                     } label: {
                         menuRow(icon: "ellipsis.circle", title: "More", detail: "Browse uploaded cubes")
                     }
