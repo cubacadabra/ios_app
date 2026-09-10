@@ -11,6 +11,22 @@ extension AppViewModel {
     func changeMorph(_ bodyID: String) { dispatchApp(["type": "body_changed", "body_id": bodyID]) }
     func saveMorph() { dispatchApp(["type": "save_body"]) }
 
+    func saveBirthday(_ dateOfBirth: String) async throws -> AppProfileUpdateResult {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<AppProfileUpdateResult, Error>) in
+            birthdayWaiter = continuation
+            dispatchApp(["type": "save_birthday", "date_of_birth": dateOfBirth])
+            if !appSnapshot.profile.birthdayIsSaving {
+                if appSnapshot.profile.dateOfBirth == dateOfBirth, let user = authUser {
+                    birthdayWaiter = nil
+                    continuation.resume(returning: AppProfileUpdateResult(user: user, age: Self.calculateAge(from: dateOfBirth)))
+                } else if let feedback = appSnapshot.profile.birthdayFeedback, feedback.kind == .error {
+                    birthdayWaiter = nil
+                    continuation.resume(throwing: AppProfileError.server(code: feedback.code, status: 400))
+                }
+            }
+        }
+    }
+
     func replaceAppSession() {
         for task in appRequests.values { task.cancel() }
         appRequests.removeAll()
@@ -20,6 +36,7 @@ extension AppViewModel {
             "account_id": authUser?.id as Any? ?? NSNull(),
             "username": authUser?.username as Any? ?? NSNull(),
             "body_id": bodyID,
+            "date_of_birth": authUser?.dateOfBirth as Any? ?? NSNull(),
         ])
     }
 
@@ -41,7 +58,16 @@ extension AppViewModel {
             authUser = user
             publishGameSession()
         }
+        if var user = authUser, user.id == appSnapshot.accountId,
+           user.dateOfBirth != appSnapshot.profile.dateOfBirth {
+            user.dateOfBirth = appSnapshot.profile.dateOfBirth
+            authUser = user
+        }
+        finishBirthdayWaiterIfReady()
         while let effect = appRuntime.pollEffect() {
+            if birthdayWaiter != nil, birthdayEffectID == nil, appSnapshot.profile.birthdayIsSaving {
+                birthdayEffectID = effect.effectId
+            }
             guard effect.accountId == authUser?.id else {
                 dispatchApp(["type": "http_failed", "effect_id": effect.effectId])
                 continue
@@ -62,6 +88,22 @@ extension AppViewModel {
                 }
                 appRequests.removeValue(forKey: effect.effectId)
             }
+        }
+    }
+
+    private func finishBirthdayWaiterIfReady() {
+        guard let waiter = birthdayWaiter,
+              birthdayEffectID != nil,
+              !appSnapshot.profile.birthdayIsSaving else { return }
+        birthdayWaiter = nil
+        birthdayEffectID = nil
+        if let feedback = appSnapshot.profile.birthdayFeedback, feedback.kind == .success,
+           let user = authUser, user.dateOfBirth == appSnapshot.profile.dateOfBirth,
+           let dateOfBirth = appSnapshot.profile.dateOfBirth {
+            waiter.resume(returning: AppProfileUpdateResult(user: user, age: Self.calculateAge(from: dateOfBirth)))
+        } else {
+            let code = appSnapshot.profile.birthdayFeedback?.code
+            waiter.resume(throwing: AppProfileError.server(code: code, status: 400))
         }
     }
 }

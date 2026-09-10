@@ -33,6 +33,11 @@ struct CheckAppContract {
                         "body_feedback": profile.bodyFeedback.map {
                             ["kind": $0.kind.rawValue, "message": $0.message]
                         } as Any? ?? NSNull(),
+                        "date_of_birth": profile.dateOfBirth as Any? ?? NSNull(),
+                        "birthday_is_saving": profile.birthdayIsSaving,
+                        "birthday_feedback": profile.birthdayFeedback.map {
+                            ["kind": $0.kind.rawValue, "code": $0.code, "message": $0.message]
+                        } as Any? ?? NSNull(),
                     ],
                 ]
                 assertSubset(projected, step["expected"]!, label: name)

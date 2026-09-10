@@ -109,10 +109,6 @@ final class AppAuthenticationService: NSObject {
         return result
     }
 
-    func saveBirthday(_ dob: String) async throws -> AppProfileUpdateResult {
-        try await updateProfile(path: "auth/birthday", body: ["dob": dob])
-    }
-
     // Capture credentials synchronously when draining an effect, not after a Task starts.
     func appRequest(_ effect: AppRuntimeHttpEffect) throws -> URLRequest {
         guard let tokens = loadTokens() else { throw AppProfileError.unauthorized }
@@ -170,41 +166,6 @@ final class AppAuthenticationService: NSObject {
             )
         } catch {
             throw AppAuthError.invalidResponse
-        }
-    }
-
-    private func updateProfile(path: String, body: [String: String]) async throws -> AppProfileUpdateResult {
-        guard let tokens = loadTokens() else { throw AppProfileError.unauthorized }
-
-        var request = URLRequest(url: ClientConfiguration.backendAPIURL.appendingPathComponent(path))
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(tokens.accessToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-        let (data, response) = try await send(request)
-        guard (200..<300).contains(response.statusCode) else {
-            let code = (try? JSONDecoder().decode(ProfileErrorResponse.self, from: data))?.error
-            throw AppProfileError.server(code: code, status: response.statusCode)
-        }
-
-        do {
-            return try JSONDecoder().decode(ProfileUpdateResponse.self, from: data).result
-        } catch {
-            throw AppAuthError.invalidResponse
-        }
-    }
-
-    private struct ProfileErrorResponse: Decodable {
-        let error: String?
-    }
-
-    private struct ProfileUpdateResponse: Decodable {
-        let user: AppAuthUser
-        let age: Int?
-
-        var result: AppProfileUpdateResult {
-            AppProfileUpdateResult(user: user, age: age)
         }
     }
 

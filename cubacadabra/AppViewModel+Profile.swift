@@ -19,20 +19,7 @@ extension AppViewModel {
         UserDefaults.standard.set(email, forKey: "cubacadabra.parent-email.\(userID)")
     }
 
-    func saveBirthday(_ dob: String) async throws -> AppProfileUpdateResult {
-        let sessionID = appSnapshot.sessionId
-        let result = try await authentication.saveBirthday(dob)
-        guard appSnapshot.sessionId == sessionID, var user = authUser, user.id == result.user.id else {
-            throw AppProfileError.unauthorized
-        }
-        user.dateOfBirth = result.user.dateOfBirth
-        authUser = user
-        profileRevision &+= 1
-        publishGameSession()
-        return AppProfileUpdateResult(user: user, age: result.age)
-    }
-
-    private static func calculateAge(from dob: String) -> Int? {
+    static func calculateAge(from dob: String) -> Int? {
         let values = dob.split(separator: "-").compactMap { Int($0) }
         guard values.count == 3 else { return nil }
         let (year, month, day) = (values[0], values[1], values[2])

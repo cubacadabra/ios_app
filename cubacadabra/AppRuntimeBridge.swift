@@ -7,6 +7,12 @@ struct AppRuntimeUsernameFeedback: Decodable, Equatable {
     let message: String
 }
 
+struct AppRuntimeBirthdayFeedback: Decodable, Equatable {
+    let kind: AppRuntimeFeedbackKind
+    let code: String
+    let message: String
+}
+
 struct AppRuntimeProfileSnapshot: Decodable, Equatable {
     let username: String?
     let usernameDraft: String
@@ -19,6 +25,9 @@ struct AppRuntimeProfileSnapshot: Decodable, Equatable {
     let bodyCanSave: Bool
     let bodyIsSaving: Bool
     let bodyFeedback: AppRuntimeUsernameFeedback?
+    let dateOfBirth: String?
+    let birthdayIsSaving: Bool
+    let birthdayFeedback: AppRuntimeBirthdayFeedback?
 }
 
 struct AppRuntimeSnapshot: Decodable {

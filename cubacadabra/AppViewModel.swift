@@ -24,6 +24,8 @@ final class AppViewModel: ObservableObject {
     let authentication: AppAuthenticationService
     let googleSignIn: NativeGoogleSignInService
     var appRequests: [UInt32: Task<Void, Never>] = [:]
+    var birthdayWaiter: CheckedContinuation<AppProfileUpdateResult, Error>?
+    var birthdayEffectID: UInt32?
     var profileRevision: UInt64 = 0
     private var authenticationTask: Task<Void, Never>?
     private var authenticationGeneration: UInt64 = 0
@@ -68,7 +70,8 @@ final class AppViewModel: ObservableObject {
             if var result {
                 // A refresh that raced an edit/save must not roll back that work.
                 if result.user.id == authUser?.id,
-                   revision != profileRevision || profileUsername.usernameIsSaving || profileUsername.bodyIsSaving,
+                   revision != profileRevision || profileUsername.usernameIsSaving || profileUsername.bodyIsSaving
+                    || profileUsername.birthdayIsSaving,
                    let user = authUser {
                     result = AppAuthResult(accessToken: result.accessToken,
                         refreshToken: result.refreshToken, accessTokenExpiresIn: result.accessTokenExpiresIn,
@@ -147,6 +150,7 @@ final class AppViewModel: ObservableObject {
     func applyAuthentication(_ result: AppAuthResult, replaceSession: Bool = true) {
         let needsReplacement = replaceSession || authUser?.id != result.user.id
             || authUser?.username != result.user.username || authUser?.bodyID != result.user.bodyID
+            || authUser?.dateOfBirth != result.user.dateOfBirth
         accessToken = result.accessToken
         authUser = result.user
         if needsReplacement { replaceAppSession() }
@@ -157,8 +161,15 @@ final class AppViewModel: ObservableObject {
     private func clearSession() {
         accessToken = nil
         authUser = nil
+        cancelBirthdayWaiter()
         replaceAppSession()
         gameSession = AppGameSession(sessionID: appSnapshot.sessionId)
+    }
+
+    func cancelBirthdayWaiter() {
+        birthdayWaiter?.resume(throwing: AppProfileError.unauthorized)
+        birthdayWaiter = nil
+        birthdayEffectID = nil
     }
 
     func publishGameSession() {

@@ -21,7 +21,6 @@ final class AppAuthenticationService {
     var restoreResult: AppAuthResult?
     var pendingRestore: Deferred<AppAuthResult?>?
     var pendingHTTP = Deferred<(Int, String)>()
-    var pendingProfile = Deferred<AppProfileUpdateResult>()
     var restoreCount = 0
     var requestAccounts: [String] = []
     func clearTokens() {}
@@ -43,7 +42,6 @@ final class AppAuthenticationService {
         // Deliberately ignores task cancellation, exercising Rust's stale fence.
         await pendingHTTP.value()
     }
-    func saveBirthday(_ dob: String) async throws -> AppProfileUpdateResult { await pendingProfile.value() }
 }
 
 @MainActor
@@ -140,11 +138,11 @@ struct CheckAppLifecycle {
         precondition(app.authUser?.id == "b" && app.authUser?.username == "Lin" && app.profileUsername.username == "Lin")
         precondition(app.gameSession.accountID == "b" && app.gameSession.accessToken == "token-b")
 
-        // Non-Rust profile endpoints are fenced by the same session identity.
+        // A birthday response racing logout is fenced by the same session identity.
         let birthday = Task { try await app.saveBirthday("2001-02-03") }
-        await eventually("Birthday started") { auth.pendingProfile.waiting }
+        await eventually("Birthday started") { auth.pendingHTTP.waiting }
         app.logOut()
-        auth.pendingProfile.finish(AppProfileUpdateResult(user: lin.user, age: 25))
+        auth.pendingHTTP.finish((200, #"{"user":{"id":"b","dob":"2001-02-03"},"age":25}"#))
         do {
             _ = try await birthday.value
             preconditionFailure("Stale birthday accepted")
