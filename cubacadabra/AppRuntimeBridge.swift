@@ -14,13 +14,15 @@ struct AppRuntimeBirthdayFeedback: Decodable, Equatable {
 }
 
 struct AppRuntimeCatalogEntry: Decodable, Equatable, Identifiable {
-    let cubeID: String
+    // These names intentionally match JSONDecoder.convertFromSnakeCase:
+    // cube_id -> cubeId and asset_base_url -> assetBaseUrl.
+    let cubeId: String
     let version: String
     let displayName: String
     let packagePath: String
-    let assetBaseURL: String?
+    let assetBaseUrl: String?
 
-    var id: String { cubeID }
+    var id: String { cubeId }
 }
 
 struct AppRuntimeCatalogFeedback: Decodable, Equatable {
