@@ -56,16 +56,18 @@ struct ModerationNoticeView: View {
 }
 
 struct SafetyCenterView: View {
-    let model: GameViewModel
+    @ObservedObject var appModel: AppViewModel
+    @ObservedObject var gameModel: GameViewModel
     @State private var activePlayers: [RemotePlayerSummary]
     @State private var blockedPlayerIDs: Set<String>
     @State private var reportTarget: RemotePlayerSummary?
     @State private var blockTarget: RemotePlayerSummary?
 
-    init(model: GameViewModel) {
-        self.model = model
-        _activePlayers = State(initialValue: model.activeRemotePlayers)
-        _blockedPlayerIDs = State(initialValue: model.blockedPlayerIDs)
+    init(appModel: AppViewModel, gameModel: GameViewModel) {
+        self.appModel = appModel
+        self.gameModel = gameModel
+        _activePlayers = State(initialValue: gameModel.activeRemotePlayers)
+        _blockedPlayerIDs = State(initialValue: Set(appModel.safetySnapshot.blockedUserIDs))
     }
 
     var body: some View {
@@ -96,6 +98,10 @@ struct SafetyCenterView: View {
                 }
 
                 Section("Blocked on this device") {
+                    if let feedback = appModel.safetySnapshot.feedback {
+                        Text(feedback.message)
+                            .foregroundStyle(.red)
+                    }
                     if blockedPlayerIDs.isEmpty {
                         Text("No blocked players.")
                             .foregroundStyle(.secondary)
@@ -109,9 +115,10 @@ struct SafetyCenterView: View {
                                     .font(.system(.body, design: .rounded, weight: .semibold))
                                 Spacer()
                                 Button("Unblock") {
-                                    model.unblockPlayer(playerID)
+                                    appModel.unblockUser(playerID)
                                 }
                                 .buttonStyle(.bordered)
+                                .disabled(appModel.safetySnapshot.pendingUserID == playerID)
                             }
                             .frame(minHeight: 44)
                         }
@@ -140,7 +147,7 @@ struct SafetyCenterView: View {
             ) {
                 if let player = reportTarget {
                     ReportPlayerView(player: player) { reason, details in
-                        model.reportPlayer(player, reason: reason, details: details)
+                        gameModel.reportPlayer(player, reason: reason, details: details)
                     }
                 }
             }
@@ -154,7 +161,7 @@ struct SafetyCenterView: View {
             ) {
                 Button("Block", role: .destructive) {
                     if let blockTarget {
-                        model.blockPlayer(blockTarget)
+                        appModel.blockUser(blockTarget.id)
                     }
                     blockTarget = nil
                 }
@@ -163,12 +170,15 @@ struct SafetyCenterView: View {
                 Text("You will no longer see this player or their presence. You can unblock them later.")
             }
         }
-        .onReceive(model.$remotePlayerNames) { _ in
-            activePlayers = model.activeRemotePlayers
+        .task {
+            appModel.loadBlockedUsers()
         }
-        .onReceive(model.$blockedPlayerIDs) { playerIDs in
-            blockedPlayerIDs = playerIDs
-            activePlayers = model.activeRemotePlayers
+        .onReceive(gameModel.$remotePlayerNames) { _ in
+            activePlayers = gameModel.activeRemotePlayers
+        }
+        .onReceive(appModel.$appSnapshot) { snapshot in
+            blockedPlayerIDs = Set(snapshot.safety.blockedUserIDs)
+            activePlayers = gameModel.activeRemotePlayers
         }
     }
 }

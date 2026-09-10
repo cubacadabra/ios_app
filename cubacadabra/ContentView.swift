@@ -38,6 +38,7 @@ struct ContentView: View {
             }
             model.onSessionRejected = { appModel.gameSessionRejected($0) }
             await appModel.start()
+            if appModel.isAuthenticated { appModel.loadBlockedUsers() }
             model.applyAccountSession(appModel.gameSession)
             if !appModel.isAuthenticated {
                 await model.load()
@@ -47,7 +48,10 @@ struct ContentView: View {
         .onReceive(appModel.$gameSession) { session in
             model.applyAccountSession(session)
         }
-        .onChange(of: appModel.authUser?.id) { _ in gamePresented = false }
+        .onChange(of: appModel.authUser?.id) { accountID in
+            gamePresented = false
+            if accountID != nil { appModel.loadBlockedUsers() }
+        }
         .onChange(of: appModel.logoutRequestID) { _ in
             gamePresented = false
             Task { await openGuestGame() }
@@ -79,7 +83,7 @@ struct ContentView: View {
         }
         .onDisappear { model.disconnect() }
         .sheet(isPresented: $safetyCenterPresented) {
-            SafetyCenterView(model: model)
+            SafetyCenterView(appModel: appModel, gameModel: model)
         }
     }
 
@@ -135,7 +139,7 @@ struct ContentView: View {
         } else if appModel.isUnderThirteen {
             ParentEmailGateView(model: appModel)
         } else {
-            MainMenuView(model: appModel, safetyDestination: SafetyCenterView(model: model)) { game in
+            MainMenuView(model: appModel, safetyDestination: SafetyCenterView(appModel: appModel, gameModel: model)) { game in
                 let sessionID = appModel.gameSession.sessionID
                 try await model.selectGame(game)
                 guard sessionID == appModel.gameSession.sessionID else { return }

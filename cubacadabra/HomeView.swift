@@ -1,5 +1,6 @@
 import SwiftUI
 struct HomeView: View {
+    @ObservedObject var appModel: AppViewModel
     @ObservedObject var model: GameViewModel
     @Binding var safetyCenterPresented: Bool
     let openMyCube: () -> Void
@@ -101,7 +102,7 @@ struct HomeView: View {
             }
         }
         .sheet(isPresented: $safetyCenterPresented) {
-            SafetyCenterView(model: model)
+            SafetyCenterView(appModel: appModel, gameModel: model)
         }
     }
 

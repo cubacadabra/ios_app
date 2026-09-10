@@ -3,6 +3,7 @@ import Foundation
 extension AppViewModel {
     var profileUsername: AppRuntimeProfileSnapshot { appSnapshot.profile }
     var catalogSnapshot: AppRuntimeCatalogSnapshot { appSnapshot.catalog }
+    var safetySnapshot: AppRuntimeSafetySnapshot { appSnapshot.safety }
 
     func beginProfileUsernameEdit() { dispatchApp(["type": "begin_username_edit"]) }
     func changeProfileUsername(_ value: String) { dispatchApp(["type": "username_changed", "value": value]) }
@@ -13,6 +14,15 @@ extension AppViewModel {
     func saveMorph() { dispatchApp(["type": "save_body"]) }
     func loadCatalog(page: Int = 1, pageSize: Int = 20) {
         dispatchApp(["type": "load_catalog", "page": page, "page_size": pageSize])
+    }
+    func loadBlockedUsers() {
+        dispatchApp(["type": "load_blocked_users"])
+    }
+    func blockUser(_ userID: String) {
+        dispatchApp(["type": "block_user", "user_id": userID])
+    }
+    func unblockUser(_ userID: String) {
+        dispatchApp(["type": "unblock_user", "user_id": userID])
     }
 
     func saveBirthday(_ dateOfBirth: String) async throws -> AppProfileUpdateResult {
@@ -45,6 +55,7 @@ extension AppViewModel {
     }
 
     private func dispatchApp(_ action: [String: Any]) {
+        let previousBlockedUserIDs = appSnapshot.safety.blockedUserIDs
         profileRevision &+= 1
         appRuntime.dispatch(action)
         appSnapshot = appRuntime.snapshot()
@@ -66,6 +77,9 @@ extension AppViewModel {
            user.dateOfBirth != appSnapshot.profile.dateOfBirth {
             user.dateOfBirth = appSnapshot.profile.dateOfBirth
             authUser = user
+        }
+        if previousBlockedUserIDs != appSnapshot.safety.blockedUserIDs {
+            publishGameSession()
         }
         finishBirthdayWaiterIfReady()
         while let effect = appRuntime.pollEffect() {

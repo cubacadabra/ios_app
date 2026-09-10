@@ -11,39 +11,6 @@ extension GameViewModel {
             }
     }
 
-    func blockPlayer(_ player: RemotePlayerSummary) {
-        guard !blockedPlayerIDs.contains(player.id) else { return }
-        blockedPlayerIDs.insert(player.id)
-        persistBlockedPlayerIDs()
-        showModerationNotice("\(player.username) is blocked. You can unblock them in Players & Safety.")
-        let service = moderationService
-        Task { [weak self] in
-            do { try await service.blockPlayer(player.id) }
-            catch {
-                guard let self else { return }
-                blockedPlayerIDs.remove(player.id)
-                persistBlockedPlayerIDs()
-                showModerationNotice("That block could not be saved. Try again.")
-            }
-        }
-    }
-
-    func unblockPlayer(_ playerID: String) {
-        guard blockedPlayerIDs.remove(playerID) != nil else { return }
-        persistBlockedPlayerIDs()
-        showModerationNotice("Player unblocked.")
-        let service = moderationService
-        Task { [weak self] in
-            do { try await service.unblockPlayer(playerID) }
-            catch {
-                guard let self else { return }
-                blockedPlayerIDs.insert(playerID)
-                persistBlockedPlayerIDs()
-                showModerationNotice("That unblock could not be saved. Try again.")
-            }
-        }
-    }
-
     func reportPlayer(_ player: RemotePlayerSummary, reason: ReportReason, details: String) {
         let service = moderationService
         let currentWorldID = worldID
@@ -58,12 +25,6 @@ extension GameViewModel {
 
     private var moderationService: ModerationService {
         ModerationService(playerID: worldSocket.playerID, accessToken: worldSocket.accessToken)
-    }
-
-    internal func refreshBlockedPlayers() async {
-        guard let serverIDs = try? await moderationService.fetchBlockedPlayerIDs() else { return }
-        blockedPlayerIDs.formUnion(serverIDs)
-        persistBlockedPlayerIDs()
     }
 
     internal func handlePresenceEvent(_ event: WorldPresenceEvent) {
@@ -137,10 +98,6 @@ extension GameViewModel {
     internal func connectWorld(_ visualWorldID: String) {
         guard visualWorldID == worldID else { return }
         dispatchClientActions()
-    }
-
-    private func persistBlockedPlayerIDs() {
-        UserDefaults.standard.set(blockedPlayerIDs.sorted(), forKey: blockedPlayerIDsKey)
     }
 
     private func showModerationNotice(_ message: String) {

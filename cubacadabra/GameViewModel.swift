@@ -47,7 +47,6 @@ final class GameViewModel: ObservableObject {
 
     let loader = GamePackageLoader()
     let gameAudio = GameAudio()
-    let blockedPlayerIDsKey = "cubacadabra.blocked-player-ids"
     var engine: EngineBridge?
     var lastTick: Date?
     var runtimeWorldIDs: [String] = []
@@ -65,8 +64,7 @@ final class GameViewModel: ObservableObject {
     var gameLoadGeneration: UInt64 = 0
 
     init() {
-        let storedIDs = UserDefaults.standard.stringArray(forKey: blockedPlayerIDsKey) ?? []
-        blockedPlayerIDs = Set(storedIDs)
+        blockedPlayerIDs = []
     }
 
     lazy var worldSocket = WorldSocketClient(
@@ -137,7 +135,6 @@ final class GameViewModel: ObservableObject {
             isLoading = false
             Task { [weak self] in
                 await self?.loader.refreshPackage(gameID: "first-game")
-                await self?.refreshBlockedPlayers()
             }
         } catch {
             guard generation == gameLoadGeneration, !Task.isCancelled else { return }

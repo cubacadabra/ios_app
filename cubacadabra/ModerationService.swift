@@ -9,29 +9,6 @@ struct ModerationService {
         self.accessToken = accessToken
     }
 
-    func fetchBlockedPlayerIDs() async throws -> [String] {
-        let response: ModerationBlocksResponse = try await request(
-            path: "moderation/blocks",
-            method: "GET"
-        )
-        return response.playerIDs
-    }
-
-    func blockPlayer(_ playerID: String) async throws {
-        let _: ModerationSuccessResponse = try await request(
-            path: "moderation/blocks",
-            method: "POST",
-            body: ["player_id": playerID]
-        )
-    }
-
-    func unblockPlayer(_ playerID: String) async throws {
-        let _: ModerationSuccessResponse = try await request(
-            path: "moderation/blocks/\(playerID)",
-            method: "DELETE"
-        )
-    }
-
     func reportPlayer(
         playerID: String,
         username: String,
@@ -88,14 +65,6 @@ struct ModerationService {
         var components = URLComponents(url: ClientConfiguration.backendURL, resolvingAgainstBaseURL: false)!
         components.scheme = components.scheme == "wss" ? "https" : "http"
         return components.url!.appendingPathComponent(path, isDirectory: false)
-    }
-}
-
-private struct ModerationBlocksResponse: Decodable {
-    let playerIDs: [String]
-
-    enum CodingKeys: String, CodingKey {
-        case playerIDs = "player_ids"
     }
 }
 

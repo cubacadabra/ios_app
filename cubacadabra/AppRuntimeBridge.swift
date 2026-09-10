@@ -37,6 +37,28 @@ struct AppRuntimeCatalogFeedback: Decodable, Equatable {
     let message: String
 }
 
+enum AppRuntimeSafetyPendingAction: String, Decodable, Equatable {
+    case load
+    case block
+    case unblock
+}
+
+struct AppRuntimeSafetySnapshot: Decodable, Equatable {
+    let blockedUserIDs: [String]
+    let isLoading: Bool
+    let pendingAction: AppRuntimeSafetyPendingAction?
+    let pendingUserID: String?
+    let feedback: AppRuntimeCatalogFeedback?
+
+    private enum CodingKeys: String, CodingKey {
+        case blockedUserIDs = "blockedUserIds"
+        case isLoading
+        case pendingAction
+        case pendingUserID = "pendingUserId"
+        case feedback
+    }
+}
+
 struct AppRuntimeCatalogSnapshot: Decodable, Equatable {
     let entries: [AppRuntimeCatalogEntry]
     let page: Int
@@ -76,6 +98,7 @@ struct AppRuntimeSnapshot: Decodable {
     let accountId: String?
     let profile: AppRuntimeProfileSnapshot
     let catalog: AppRuntimeCatalogSnapshot
+    let safety: AppRuntimeSafetySnapshot
 
     private enum CodingKeys: String, CodingKey {
         case protocolVersion
@@ -83,6 +106,7 @@ struct AppRuntimeSnapshot: Decodable {
         case accountId
         case profile
         case catalog
+        case safety
     }
 }
 

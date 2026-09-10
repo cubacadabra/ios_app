@@ -16,6 +16,10 @@ extension GameViewModel {
             username = worldSocket.username
             hasEnteredGame = false
         }
+        if previous.blockedUserIDs != session.blockedUserIDs {
+            blockedPlayerIDs = session.blockedUserIDs
+            engine?.setIgnoredPlayerIDs(blockedPlayerIDs)
+        }
         worldSocket.setAccessToken(session.accessToken)
         if let name = session.username, !name.isEmpty {
             worldSocket.adoptUsername(name)
@@ -23,9 +27,6 @@ extension GameViewModel {
         }
         engine?.setUsername(username)
         engine?.setAuthenticated(session.accountID != nil)
-        if previous.accountID != session.accountID, session.accountID != nil {
-            Task { await refreshBlockedPlayers() }
-        }
         // Full appearance comes from the authenticated world session; the
         // accepted body is also applied when updating/recreating a local engine.
         if previous.bodyID != session.bodyID, let engine { applyAccountAppearance(to: engine) }

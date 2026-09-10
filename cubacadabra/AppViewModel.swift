@@ -8,6 +8,7 @@ struct AppGameSession: Equatable {
     var accessToken: String?
     var username: String?
     var bodyID: String?
+    var blockedUserIDs: Set<String> = []
 }
 
 @MainActor
@@ -175,6 +176,7 @@ final class AppViewModel: ObservableObject {
     func publishGameSession() {
         gameSession = AppGameSession(sessionID: appSnapshot.sessionId, accountID: authUser?.id,
             accessToken: accessToken,
-            username: authUser?.username, bodyID: authUser?.bodyID)
+            username: authUser?.username, bodyID: authUser?.bodyID,
+            blockedUserIDs: Set(appSnapshot.safety.blockedUserIDs))
     }
 }

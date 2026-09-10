@@ -71,6 +71,41 @@ struct CheckAppContract {
         precondition(catalogEntry?.cubeID == "uploaded-cube")
         precondition(catalogEntry?.assetBaseURL == nil)
         print("Passed explicit Swift catalog schema and public-effect checks.")
+
+        let safetyRuntime = AppRuntimeBridge()
+        safetyRuntime.dispatch([
+            "type": "replace_session",
+            "account_id": "account-1",
+            "username": "Ada",
+            "body_id": "cuba:person.v1",
+            "date_of_birth": "2000-01-01",
+        ])
+        safetyRuntime.dispatch(["type": "load_blocked_users"])
+        guard let safetyEffect = safetyRuntime.pollEffect() else {
+            preconditionFailure("blocked users effect missing")
+        }
+        precondition(safetyEffect.path == "moderation/blocks")
+        precondition(safetyEffect.accountId == "account-1")
+        safetyRuntime.dispatch([
+            "type": "http_completed",
+            "effect_id": safetyEffect.effectId,
+            "status": 200,
+            "body": "{\"ok\":true,\"user_ids\":[\"user-1\"]}",
+        ])
+        precondition(safetyRuntime.snapshot().safety.blockedUserIDs == ["user-1"])
+        safetyRuntime.dispatch(["type": "unblock_user", "user_id": "user-1"])
+        guard let unblockEffect = safetyRuntime.pollEffect() else {
+            preconditionFailure("unblock effect missing")
+        }
+        precondition(unblockEffect.path == "moderation/blocks/user-1")
+        safetyRuntime.dispatch([
+            "type": "http_completed",
+            "effect_id": unblockEffect.effectId,
+            "status": 200,
+            "body": "{\"ok\":true}",
+        ])
+        precondition(safetyRuntime.snapshot().safety.blockedUserIDs.isEmpty)
+        print("Passed explicit Swift safety schema and rollback checks.")
     }
 
     static func assertSubset(_ actual: Any, _ expected: Any, label: String) {
