@@ -12,15 +12,16 @@ struct MoreCubesView: View {
             #if DEBUG
             let packagePath = entry.packagePath
             #else
-            let packagePath = entry.assetBaseUrl ?? entry.packagePath
+            let packagePath = entry.assetBaseURL ?? entry.packagePath
             #endif
-            guard let packageURL = URL(string: packagePath, relativeTo: ClientConfiguration.backendAPIURL)?.absoluteURL,
+            let normalizedPackagePath = packagePath.hasSuffix("/") ? packagePath : packagePath + "/"
+            guard let packageURL = URL(string: normalizedPackagePath, relativeTo: ClientConfiguration.backendAPIURL)?.absoluteURL,
                   packageURL.path.hasPrefix("/cubes/"),
                   isAllowedPackageURL(packageURL) else { return nil }
             return GameCatalogEntry(
-                id: entry.cubeId,
+                id: entry.cubeID,
                 title: entry.displayName,
-                subtitle: "\(entry.cubeId) · v\(entry.version)",
+                subtitle: "\(entry.cubeID) · v\(entry.version)",
                 version: entry.version,
                 packageBaseURL: packageURL
             )

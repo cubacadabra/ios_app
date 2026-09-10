@@ -11,8 +11,8 @@ extension AppViewModel {
     func beginMorphEdit() { dispatchApp(["type": "begin_body_edit"]) }
     func changeMorph(_ bodyID: String) { dispatchApp(["type": "body_changed", "body_id": bodyID]) }
     func saveMorph() { dispatchApp(["type": "save_body"]) }
-    func loadCatalog(pageSize: Int = 20) {
-        dispatchApp(["type": "load_catalog", "page_size": pageSize])
+    func loadCatalog(page: Int = 1, pageSize: Int = 20) {
+        dispatchApp(["type": "load_catalog", "page": page, "page_size": pageSize])
     }
 
     func saveBirthday(_ dateOfBirth: String) async throws -> AppProfileUpdateResult {

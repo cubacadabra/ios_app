@@ -14,15 +14,21 @@ struct AppRuntimeBirthdayFeedback: Decodable, Equatable {
 }
 
 struct AppRuntimeCatalogEntry: Decodable, Equatable, Identifiable {
-    // These names intentionally match JSONDecoder.convertFromSnakeCase:
-    // cube_id -> cubeId and asset_base_url -> assetBaseUrl.
-    let cubeId: String
+    let cubeID: String
     let version: String
     let displayName: String
     let packagePath: String
-    let assetBaseUrl: String?
+    let assetBaseURL: String?
 
-    var id: String { cubeId }
+    private enum CodingKeys: String, CodingKey {
+        case cubeID = "cubeId"
+        case version
+        case displayName
+        case packagePath
+        case assetBaseURL = "assetBaseUrl"
+    }
+
+    var id: String { cubeID }
 }
 
 struct AppRuntimeCatalogFeedback: Decodable, Equatable {
@@ -33,8 +39,18 @@ struct AppRuntimeCatalogFeedback: Decodable, Equatable {
 
 struct AppRuntimeCatalogSnapshot: Decodable, Equatable {
     let entries: [AppRuntimeCatalogEntry]
+    let page: Int
+    let hasNextPage: Bool
     let isLoading: Bool
     let feedback: AppRuntimeCatalogFeedback?
+
+    private enum CodingKeys: String, CodingKey {
+        case entries
+        case page
+        case hasNextPage
+        case isLoading
+        case feedback
+    }
 }
 
 struct AppRuntimeProfileSnapshot: Decodable, Equatable {
@@ -60,6 +76,14 @@ struct AppRuntimeSnapshot: Decodable {
     let accountId: String?
     let profile: AppRuntimeProfileSnapshot
     let catalog: AppRuntimeCatalogSnapshot
+
+    private enum CodingKeys: String, CodingKey {
+        case protocolVersion
+        case sessionId
+        case accountId
+        case profile
+        case catalog
+    }
 }
 
 struct AppRuntimeHttpEffect: Decodable {
@@ -69,6 +93,15 @@ struct AppRuntimeHttpEffect: Decodable {
     let method: String
     let path: String
     let body: String
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case effectId
+        case accountId
+        case method
+        case path
+        case body
+    }
 }
 
 /// The ABI is deliberately feature-independent. A protocol mismatch is a build

@@ -53,6 +53,24 @@ struct CheckAppContract {
             }
         }
         print("Passed \(scenarios.count) shared scenarios through the production Swift/C bridge.")
+
+        let catalogRuntime = AppRuntimeBridge()
+        catalogRuntime.dispatch(["type": "load_catalog", "page": 1, "page_size": 20])
+        guard let catalogEffect = catalogRuntime.pollEffect() else {
+            preconditionFailure("catalog effect missing")
+        }
+        precondition(catalogEffect.accountId == nil)
+        precondition(catalogEffect.path == "cubes?page=1&page_size=20")
+        catalogRuntime.dispatch([
+            "type": "http_completed",
+            "effect_id": catalogEffect.effectId,
+            "status": 200,
+            "body": "{\"page\":1,\"hasNextPage\":false,\"cubes\":[{\"id\":1,\"cubeId\":\"uploaded-cube\",\"version\":\"1.0.0\",\"displayName\":\"Uploaded Cube\",\"fileCount\":1,\"packagePath\":\"/cubes/1/files/\"}]}",
+        ])
+        let catalogEntry = catalogRuntime.snapshot().catalog.entries.first
+        precondition(catalogEntry?.cubeID == "uploaded-cube")
+        precondition(catalogEntry?.assetBaseURL == nil)
+        print("Passed explicit Swift catalog schema and public-effect checks.")
     }
 
     static func assertSubset(_ actual: Any, _ expected: Any, label: String) {
