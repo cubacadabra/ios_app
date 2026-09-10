@@ -41,6 +41,6 @@ sync_game_package() {
   fi
 }
 
-for game_id in first-game second-game; do
+for game_id in first-game second-game third-game; do
   sync_game_package "$game_id"
 done

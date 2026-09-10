@@ -163,6 +163,8 @@
 				"$(SRCROOT)/../first-game/src/main.luau",
 				"$(SRCROOT)/../second-game/manifest.json",
 				"$(SRCROOT)/../second-game/src/main.luau",
+				"$(SRCROOT)/../third-game/manifest.json",
+				"$(SRCROOT)/../third-game/src/main.luau",
 			);
 			name = "Sync game packages";
 			outputPaths = (
@@ -170,6 +172,8 @@
 				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/games/first-game/game.luau",
 				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/games/second-game/manifest.json",
 				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/games/second-game/game.luau",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/games/third-game/manifest.json",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/games/third-game/game.luau",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;

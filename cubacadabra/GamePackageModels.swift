@@ -8,6 +8,7 @@ struct GamePackage: Decodable {
     let scene: SceneDefinition
     let palette: [String: String]
     let world: WorldSettings
+    let server: WorldServerSettings?
     let launchPads: [LaunchPadDefinition]
     let blocks: [BlockDefinition]
     let worlds: [String: WorldDefinition]
@@ -21,7 +22,7 @@ struct GamePackage: Decodable {
 
     func worldDefinition(named id: String) -> WorldDefinition? {
         if id == "lobby" {
-            return WorldDefinition(scene: scene, palette: palette, world: world, launchPads: launchPads, blocks: blocks)
+            return WorldDefinition(scene: scene, palette: palette, world: world, server: server, launchPads: launchPads, blocks: blocks)
         }
         return worlds[id]
     }
@@ -122,14 +123,17 @@ struct GameCatalogEntry: Identifiable, Equatable {
             GameCatalogEntry(
                 id: "first-game",
                 title: "First Game",
-                subtitle: "Build together in the clearing",
-                packageBaseURL: ClientConfiguration.gameBaseURL(for: "first-game")
+                subtitle: "Build together in the clearing"
             ),
             GameCatalogEntry(
                 id: "second-game",
                 title: "Second Game",
-                subtitle: "Drop signals in the relay yard",
-                packageBaseURL: ClientConfiguration.gameBaseURL(for: "second-game")
+                subtitle: "Drop signals in the relay yard"
+            ),
+            GameCatalogEntry(
+                id: "third-game",
+                title: "Third Game",
+                subtitle: "Probe every world capability"
             ),
         ]
     }
@@ -148,6 +152,7 @@ struct WorldDefinition: Decodable {
     let scene: SceneDefinition?
     let palette: [String: String]
     let world: WorldSettings
+    let server: WorldServerSettings?
     let launchPads: [LaunchPadDefinition]
     let blocks: [BlockDefinition]
 
@@ -155,12 +160,14 @@ struct WorldDefinition: Decodable {
         scene: SceneDefinition? = nil,
         palette: [String: String] = [:],
         world: WorldSettings = WorldSettings(),
+        server: WorldServerSettings? = nil,
         launchPads: [LaunchPadDefinition] = [],
         blocks: [BlockDefinition] = []
     ) {
         self.scene = scene
         self.palette = palette
         self.world = world
+        self.server = server
         self.launchPads = launchPads
         self.blocks = blocks
     }
@@ -170,13 +177,46 @@ struct WorldDefinition: Decodable {
         scene = try container.decodeIfPresent(SceneDefinition.self, forKey: .scene)
         palette = try container.decodeIfPresent([String: String].self, forKey: .palette) ?? [:]
         world = try container.decodeIfPresent(WorldSettings.self, forKey: .world) ?? WorldSettings()
+        server = try container.decodeIfPresent(WorldServerSettings.self, forKey: .server)
         launchPads = try container.decodeIfPresent([LaunchPadDefinition].self, forKey: .launchPads) ?? []
         blocks = try container.decodeIfPresent([BlockDefinition].self, forKey: .blocks) ?? []
     }
 
     private enum CodingKeys: String, CodingKey {
-        case scene, palette, world, launchPads, blocks
+        case scene, palette, world, server, launchPads, blocks
     }
+}
+
+struct WorldServerSettings: Codable {
+    let ambientNpcs: AmbientNPCSettings?
+}
+
+struct AmbientNPCSettings: Codable {
+    let max: Int
+    let bounds: AmbientNPCBounds
+    let wanderSeconds: AmbientNPCRange
+    let speed: AmbientNPCRange
+    let entities: [AmbientNPCEntity]
+}
+
+struct AmbientNPCBounds: Codable {
+    let minX: Float
+    let maxX: Float
+    let minZ: Float
+    let maxZ: Float
+}
+
+struct AmbientNPCRange: Codable {
+    let min: Float
+    let max: Float
+}
+
+struct AmbientNPCEntity: Codable {
+    let id: String
+    let username: String
+    let spawn: [Float]
+    let seed: UInt32
+    let appearance: WorldAppearance
 }
 
 struct WorldSettings: Decodable {

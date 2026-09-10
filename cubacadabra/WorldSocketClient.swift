@@ -27,6 +27,7 @@ final class WorldSocketClient {
     private var reconnectAttempt = 0
     private var stopped = true
     private var gameID = "first-game"
+    private var worldConfigs: [String: WorldServerSettings] = [:]
     private var lastMoveSentAt = Date.distantPast.timeIntervalSinceReferenceDate
     private var lastSentMove: SentMove?
     private var pendingUsername: String?
@@ -79,6 +80,10 @@ final class WorldSocketClient {
         gameID = nextGameID
     }
 
+    func setWorldConfigs(_ nextWorldConfigs: [String: WorldServerSettings]) {
+        worldConfigs = nextWorldConfigs
+    }
+
     func disconnect() {
         guard !stopped || socketTask != nil else { return }
         stopped = true
@@ -109,6 +114,14 @@ final class WorldSocketClient {
             URLQueryItem(name: "client", value: "ios"),
             URLQueryItem(name: "game", value: gameID),
         ]
+        if let config = worldConfigs[worldID],
+           let data = try? JSONEncoder().encode(config) {
+            let encoded = data.base64EncodedString()
+                .replacingOccurrences(of: "+", with: "-")
+                .replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "=", with: "")
+            components.queryItems?.append(URLQueryItem(name: "world_config", value: encoded))
+        }
         guard let url = components.url else {
             scheduleReconnect(generation: expectedGeneration)
             return

@@ -43,7 +43,7 @@ Game package: http://localhost:5173/games/first-game/
 Backend:      ws://localhost:8787
 ```
 
-The Xcode build phases build both sibling game packages through the shared
+The Xcode build phases build all three sibling game packages through the shared
 `tools` repository and copy their runtime files into the final app bundle under
 `games/<game-id>/manifest.json` and `games/<game-id>/game.luau`. The Rust phase
 then compiles the native engine and app state for the selected iOS target and

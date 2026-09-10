@@ -121,6 +121,7 @@ final class GameViewModel: ObservableObject {
             let loadedEngine = try makeEngine(from: loaded)
             gameAudio.configure(with: loaded.audioAssets)
             runtimeWorldIDs = loadedPackage.runtimeWorldEntries().map(\.id)
+            worldSocket.setWorldConfigs(Dictionary(uniqueKeysWithValues: loadedPackage.runtimeWorldEntries().map { ($0.id, $0.definition.server) }.compactMap { id, server in server.map { (id, $0) } }))
             package = loadedPackage
             selectedGameID = firstGame.id
             selectedGame = firstGame
@@ -327,6 +328,7 @@ final class GameViewModel: ObservableObject {
         selectedGameID = game.id
         selectedGame = game
         runtimeWorldIDs = nextPackage.runtimeWorldEntries().map(\.id)
+        worldSocket.setWorldConfigs(Dictionary(uniqueKeysWithValues: nextPackage.runtimeWorldEntries().map { ($0.id, $0.definition.server) }.compactMap { id, server in server.map { (id, $0) } }))
         frame = nextEngine.frame()
         worldID = runtimeWorldIDs[safe: frame?.activeWorldIndex ?? -1] ?? nextPackage.initialWorld
         lobbyEnabled = nextPackage.lobbyEnabled && worldID == "lobby"
