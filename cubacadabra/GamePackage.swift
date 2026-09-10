@@ -14,10 +14,14 @@ struct GamePackageLoader {
     private static let maximumManifestBytes = 512_000
     private static let maximumScriptBytes = 512_000
     private static let maximumImageAssetBytes = 8 * 1024 * 1024
+    private static let maximumMorphPackBytes = 64 * 1024 * 1024
+    private static let maximumMorphResidentBytes = 16 * 1024 * 1024
     private static let audioIDPattern = "^[A-Za-z0-9._-]{1,64}$"
     private static let audioPathPattern = "^assets/(?:[A-Za-z0-9_-][A-Za-z0-9._-]*/)*[A-Za-z0-9_-][A-Za-z0-9._-]*\\.wav$"
     private static let imageIDPattern = "^[A-Za-z0-9._-]{1,64}$"
     private static let imagePathPattern = "^assets/(?:[A-Za-z0-9_-][A-Za-z0-9._-]*/)*[A-Za-z0-9_-][A-Za-z0-9._-]*\\.(?:png|jpe?g)$"
+    private static let morphIDPattern = "^[a-z0-9-]+:[a-z0-9_-]+(?:/[a-z0-9_-]+)*\\.v[1-9][0-9]*$"
+    private static let morphPathPattern = "^assets/(?:[A-Za-z0-9_-][A-Za-z0-9._-]*/)*[A-Za-z0-9_-][A-Za-z0-9._-]*\\.morphpack$"
 
     func load(gameID: String = "first-game", packageBaseURL: URL? = nil) async throws -> LoadedGamePackage {
         guard Self.isValidGameID(gameID) else { throw GamePackageError.invalidGameID }
@@ -185,6 +189,7 @@ struct GamePackageLoader {
             script: script,
             audioAssets: audioAssets,
             imageAssets: [:],
+            morphPacks: [],
             version: GamePackageVersion(manifestObject?["version"] as? String)
         )
     }
@@ -246,8 +251,38 @@ struct GamePackageLoader {
             script: loaded.script,
             audioAssets: loaded.audioAssets,
             imageAssets: imageAssets,
+            morphPacks: try await loadMorphPacks(from: loaded, baseURL: baseURL),
             version: loaded.version
         )
+    }
+
+    private func loadMorphPacks(
+        from loaded: LoadedGamePackage,
+        baseURL: URL
+    ) async throws -> [LoadedGameMorphPack] {
+        let definitions = try normalizedMorphPacks(loaded.package.assets?.morphPacks, baseURL: baseURL)
+        var totalBytes = 0
+        var packs: [LoadedGameMorphPack] = []
+        for (id, definition) in definitions.sorted(by: { $0.key < $1.key }) {
+            let data: Data
+            if definition.url.isFileURL {
+                guard let fileData = try? Data(contentsOf: definition.url) else {
+                    throw GamePackageError.invalidMorphPack(id)
+                }
+                data = fileData
+            } else {
+                data = try await fetch(definition.url, maximumBytes: Self.maximumMorphPackBytes)
+            }
+            guard !data.isEmpty, data.count <= Self.maximumMorphPackBytes else {
+                throw GamePackageError.invalidMorphPack(id)
+            }
+            totalBytes += data.count
+            guard totalBytes <= Self.maximumMorphResidentBytes else {
+                throw GamePackageError.morphPackResidencyTooLarge
+            }
+            packs.append(LoadedGameMorphPack(data: data))
+        }
+        return packs
     }
 
     private func normalizedImageAssets(
@@ -267,6 +302,26 @@ struct GamePackageLoader {
                 throw GamePackageError.invalidImageAsset(id)
             }
             assets[id] = LoadedGameImageDefinition(url: url)
+        }
+    }
+
+    private func normalizedMorphPacks(
+        _ definitions: [String: GameMorphPackDefinition]?,
+        baseURL: URL
+    ) throws -> [String: LoadedGameMorphDefinition] {
+        let entries = definitions ?? [:]
+        guard entries.count <= 32 else { throw GamePackageError.tooManyMorphPacks }
+        return try entries.reduce(into: [:]) { packs, entry in
+            let (id, definition) = entry
+            guard id.range(of: Self.morphIDPattern, options: .regularExpression) != nil,
+                  definition.path.range(
+                    of: Self.morphPathPattern,
+                    options: [.regularExpression, .caseInsensitive]
+                  ) != nil,
+                  let url = URL(string: definition.path, relativeTo: baseURL)?.absoluteURL else {
+                throw GamePackageError.invalidMorphPack(id)
+            }
+            packs[id] = LoadedGameMorphDefinition(url: url)
         }
     }
 
@@ -315,6 +370,7 @@ struct LoadedGamePackage {
     let script: String
     let audioAssets: [String: LoadedGameAudioAsset]
     let imageAssets: [String: LoadedGameImageAsset]
+    let morphPacks: [LoadedGameMorphPack]
     let version: GamePackageVersion?
 }
 
@@ -322,7 +378,15 @@ struct LoadedGameImageAsset {
     let data: Data
 }
 
+struct LoadedGameMorphPack {
+    let data: Data
+}
+
 private struct LoadedGameImageDefinition {
+    let url: URL
+}
+
+private struct LoadedGameMorphDefinition {
     let url: URL
 }
 

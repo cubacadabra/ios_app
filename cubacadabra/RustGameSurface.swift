@@ -151,8 +151,15 @@ struct RustGameSurface: UIViewRepresentable {
                 rustSurfaceLog.error("Package image atlas upload failed")
                 NSLog("Cubacadabra package image atlas upload failed")
             } else {
-                packageImagesEngine = engine
                 NSLog("Cubacadabra package image atlas upload succeeded")
+            }
+            let morphPacksUploaded = engine.uploadMorphPacks(to: renderer)
+            if !morphPacksUploaded {
+                rustSurfaceLog.error("Morph pack upload failed")
+                NSLog("Cubacadabra morph pack upload failed")
+            }
+            if uploaded && morphPacksUploaded {
+                packageImagesEngine = engine
             }
         }
     }

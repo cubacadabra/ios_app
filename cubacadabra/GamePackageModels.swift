@@ -36,6 +36,7 @@ struct GamePackage: Decodable {
 struct GameAssets: Decodable {
     let audio: [String: GameAudioAssetDefinition]?
     let images: [String: GameImageAssetDefinition]?
+    let morphPacks: [String: GameMorphPackDefinition]?
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -63,9 +64,21 @@ struct GameAssets: Decodable {
         } else {
             images = nil
         }
+        if container.contains(.morphPacks) {
+            guard try !container.decodeNil(forKey: .morphPacks) else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .morphPacks,
+                    in: container,
+                    debugDescription: "Game manifest assets.morphPacks must be an object."
+                )
+            }
+            morphPacks = try container.decode([String: GameMorphPackDefinition].self, forKey: .morphPacks)
+        } else {
+            morphPacks = nil
+        }
     }
 
-    private enum CodingKeys: String, CodingKey { case audio, images }
+    private enum CodingKeys: String, CodingKey { case audio, images, morphPacks }
 }
 
 struct GameAudioAssetDefinition: Decodable {
@@ -90,6 +103,10 @@ struct GameImageAssetDefinition: Decodable {
     }
 
     private enum CodingKeys: String, CodingKey { case path }
+}
+
+struct GameMorphPackDefinition: Decodable {
+    let path: String
 }
 
 struct GameCatalogEntry: Identifiable, Equatable {
@@ -322,6 +339,7 @@ enum GamePackageError: LocalizedError {
     case missingWorld(String), missingBundledPackage, invalidBundledPackage
     case invalidAudioAsset(String)
     case invalidImageAsset(String), tooManyImageAssets, imageAtlasTooLarge, imageAtlasEncodingFailed
+    case invalidMorphPack(String), tooManyMorphPacks, morphPackResidencyTooLarge
 
     var errorDescription: String? {
         switch self {
@@ -337,6 +355,9 @@ enum GamePackageError: LocalizedError {
         case .tooManyImageAssets: return "This game declares too many world images."
         case .imageAtlasTooLarge: return "The game images do not fit in the world texture atlas."
         case .imageAtlasEncodingFailed: return "The game image atlas could not be prepared."
+        case .invalidMorphPack(let id): return "The game morph pack \"\(id)\" is invalid."
+        case .tooManyMorphPacks: return "This game declares too many morph packs."
+        case .morphPackResidencyTooLarge: return "The game morph packs exceed the renderer residency limit."
         }
     }
 }

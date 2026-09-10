@@ -52,6 +52,7 @@ final class EngineBridge {
     private let clientHandle: OpaquePointer
     private let handle: OpaquePointer
     private var packageImageAtlas: GameImageAtlas?
+    private var morphPacks: [Data] = []
 
     init(manifest: String, script: String) throws {
         let manifestBytes = Array(manifest.utf8)
@@ -234,6 +235,25 @@ final class EngineBridge {
 
     func setPackageImageAtlas(_ atlas: GameImageAtlas?) {
         packageImageAtlas = atlas
+    }
+
+    func setMorphPacks(_ packs: [Data]) {
+        morphPacks = packs
+    }
+
+    @discardableResult
+    func uploadMorphPacks(to renderer: OpaquePointer) -> Bool {
+        for pack in morphPacks {
+            let accepted = pack.withUnsafeBytes { buffer in
+                engine_renderer_register_morph_pack(
+                    renderer,
+                    buffer.bindMemory(to: UInt8.self).baseAddress,
+                    UInt(pack.count)
+                ) != 0
+            }
+            if !accepted { return false }
+        }
+        return true
     }
 
     @discardableResult
