@@ -281,6 +281,10 @@ uint8_t engine_renderer_register_morph_pack(
     const uint8_t *bytes,
     uintptr_t length
 );
+uint8_t engine_renderer_set_avatar_preview_mode(
+    CubacadabraRenderer *renderer,
+    uint8_t enabled
+);
 void engine_renderer_sync(CubacadabraRenderer *renderer, const CubacadabraEngine *engine);
 void engine_renderer_draw(CubacadabraRenderer *renderer);
 void engine_renderer_destroy(CubacadabraRenderer *renderer);

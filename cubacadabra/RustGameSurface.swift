@@ -8,6 +8,7 @@ private let rustSurfaceLog = Logger(subsystem: "com.cubacadabra.app", category: 
 struct RustGameSurface: UIViewRepresentable {
     let engine: EngineBridge
     let isActive: Bool
+    var avatarPreviewMode: Bool = false
     var onLookChanged: (CGSize) -> Void = { _ in }
     var onLookEnded: () -> Void = {}
     var onZoomDelta: (CGFloat) -> Void = { _ in }
@@ -89,6 +90,9 @@ struct RustGameSurface: UIViewRepresentable {
             resizeRenderer(to: view.drawableSize, view: view)
             guard surface.isActive else { return }
             attachIfNeeded(to: view)
+            if let renderer {
+                surface.engine.setAvatarPreviewMode(surface.avatarPreviewMode, renderer: renderer)
+            }
             uploadPackageImagesIfNeeded()
             syncEngine()
         }

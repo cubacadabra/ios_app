@@ -241,6 +241,12 @@ final class EngineBridge {
         morphPacks = packs
     }
 
+    /// Enables the shared neutral character preview scene for an editor
+    /// surface. Normal game surfaces leave this disabled.
+    func setAvatarPreviewMode(_ enabled: Bool, renderer: OpaquePointer) {
+        _ = engine_renderer_set_avatar_preview_mode(renderer, enabled ? 1 : 0)
+    }
+
     @discardableResult
     func uploadMorphPacks(to renderer: OpaquePointer) -> Bool {
         for pack in morphPacks {
