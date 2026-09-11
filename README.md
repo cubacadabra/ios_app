@@ -109,3 +109,10 @@ the Xcode build.
 - [first-game/README.md](../first-game/README.md) — first-game package schema
 - [second-game/README.md](../second-game/README.md) — second-game package behavior
 - [backend/README.md](../backend/README.md) — local, LAN, and production sockets
+
+### Licensing
+
+Copyright (C) 2026 Andrew Arrow
+
+Licensed under the GNU General Public License v3.0 or later.
+See [LICENSE](LICENSE).
