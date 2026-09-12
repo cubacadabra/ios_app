@@ -1,7 +1,9 @@
 import Combine
 import SwiftUI
 
-private let morphCoral = Color(red: 0.91, green: 0.39, blue: 0.29)
+private let morphAccent = Color(red: 0.36, green: 0.37, blue: 0.98)
+private let morphAccentBright = Color(red: 0.50, green: 0.43, blue: 1.00)
+private let morphStageInk = Color(red: 0.035, green: 0.055, blue: 0.12)
 
 private struct MorphPreviewSelection: Equatable {
     let base: String?
@@ -11,12 +13,24 @@ private struct MorphPreviewSelection: Equatable {
     let assets: [AppRuntimeMorphAsset]
 }
 
+private struct MorphAssetGroup: Identifiable {
+    let id: String
+    let assets: [AppRuntimeMorphAsset]
+}
+
 struct MorphSelectionView: View {
     @ObservedObject var model: AppViewModel
     @ObservedObject var gameModel: GameViewModel
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
     @State private var tab = 0
+    @State private var selectedKind: String?
+    @State private var appeared = false
     private let previewClock = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
+
     private var appearance: AppRuntimeAppearanceSnapshot { model.appearanceSnapshot }
+
     private var previewSelection: MorphPreviewSelection {
         MorphPreviewSelection(
             base: appearance.draftBase,
@@ -27,66 +41,654 @@ struct MorphSelectionView: View {
         )
     }
 
+    private var assetGroups: [MorphAssetGroup] {
+        Dictionary(grouping: appearance.assets.filter { $0.kind != "base" }, by: { $0.kind })
+            .map { MorphAssetGroup(id: $0.key, assets: $0.value.sorted { $0.displayName < $1.displayName }) }
+            .sorted { categoryOrder($0.id) < categoryOrder($1.id) }
+    }
+
+    private var activeGroup: MorphAssetGroup? {
+        assetGroups.first { $0.id == selectedKind } ?? assetGroups.first
+    }
+
+    private var stageTextColor: Color {
+        colorScheme == .dark ? .white : Color(red: 0.08, green: 0.10, blue: 0.17)
+    }
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Text("Choose a starter, then customize the details.").font(.system(size: 17, weight: .medium, design: .rounded)).foregroundStyle(.secondary)
-                Picker("Morph editor", selection: $tab) { Text("Starters").tag(0); Text("Customize").tag(1) }.pickerStyle(.segmented)
-                if appearance.isLoading { ProgressView("Loading morphs…") } else if tab == 0 { starterList } else { customizeList }
-                preview
-                if let feedback = appearance.feedback { Label(feedback.message, systemImage: feedback.kind == .error ? "exclamationmark.circle" : "checkmark.circle").font(.system(size: 14, weight: .semibold, design: .rounded)).foregroundStyle(feedback.kind == .error ? .red : .green) }
-                Button { model.saveMorph() } label: {
-                    HStack { if appearance.isSaving { ProgressView().tint(.white) }; Text(appearance.isSaving ? "SAVING…" : "SAVE MORPH"); Spacer(); Image(systemName: "checkmark") }
-                        .font(.system(size: 15, weight: .bold, design: .rounded)).tracking(1.1).foregroundStyle(.white).padding(.horizontal, 20).frame(minHeight: 56).background(morphCoral, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-                }.buttonStyle(.plain).disabled(appearance.isSaving || !appearance.draftCanSave)
-            }.frame(maxWidth: 620, alignment: .leading).padding(.horizontal, 24).padding(.top, 24).padding(.bottom, 28)
-        }.navigationTitle("Choose your morph").navigationBarTitleDisplayMode(.inline).background(Color(.systemBackground).ignoresSafeArea()).onAppear { model.beginMorphEdit(); syncPreviewAppearance() }.onChange(of: previewSelection) { _ in syncPreviewAppearance() }.onReceive(previewClock) { date in gameModel.tickMorphPreview(at: date) }
+        GeometryReader { proxy in
+            ZStack {
+                stageBackdrop
+
+                ScrollView {
+                    VStack(spacing: 0) {
+                        editorHeader
+                            .padding(.horizontal, 20)
+                            .padding(.top, 10)
+
+                        modePicker
+                            .frame(maxWidth: 500)
+                            .padding(.horizontal, 24)
+                            .padding(.top, 16)
+
+                        previewStage(height: min(max(proxy.size.width * 1.04, 372), 480))
+                            .frame(maxWidth: 760)
+                            .padding(.horizontal, 12)
+                            .padding(.top, 10)
+
+                        editorPanel
+                            .frame(maxWidth: 760)
+                            .padding(.top, -6)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .scrollIndicators(.hidden)
+            }
+        }
+        .navigationBarHidden(true)
+        .safeAreaInset(edge: .bottom, spacing: 0) { saveArea }
+        .onAppear {
+            model.beginMorphEdit()
+            syncPreviewAppearance()
+            guard !appeared else { return }
+            if reduceMotion {
+                appeared = true
+            } else {
+                withAnimation(.easeOut(duration: 0.38)) { appeared = true }
+            }
+        }
+        .onChange(of: previewSelection) { _ in syncPreviewAppearance() }
+        .onReceive(previewClock) { date in gameModel.tickMorphPreview(at: date) }
+    }
+
+    private var stageBackdrop: some View {
+        ZStack {
+            LinearGradient(
+                colors: colorScheme == .dark
+                    ? [Color(red: 0.08, green: 0.12, blue: 0.25), morphStageInk, Color(red: 0.07, green: 0.045, blue: 0.13)]
+                    : [Color(red: 0.91, green: 0.94, blue: 1.00), Color(red: 0.80, green: 0.85, blue: 0.95), Color(red: 0.94, green: 0.93, blue: 0.99)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            Circle()
+                .fill(morphAccent.opacity(0.24))
+                .frame(width: 310, height: 310)
+                .blur(radius: 76)
+                .offset(x: 150, y: -220)
+            Circle()
+                .fill(Color(red: 0.95, green: 0.37, blue: 0.46).opacity(0.10))
+                .frame(width: 250, height: 250)
+                .blur(radius: 70)
+                .offset(x: -170, y: 170)
+        }
+        .ignoresSafeArea()
+    }
+
+    private var editorHeader: some View {
+        HStack(spacing: 12) {
+            Button { dismiss() } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 18, weight: .bold))
+                    .frame(width: 44, height: 44)
+                    .background(stageTextColor.opacity(0.08), in: Circle())
+                    .overlay { Circle().stroke(stageTextColor.opacity(0.14), lineWidth: 1) }
+            }
+            .buttonStyle(MorphPressButtonStyle())
+            .accessibilityLabel("Back")
+
+            VStack(spacing: 2) {
+                Text("Edit Morph")
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                Text(previewName)
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(stageTextColor.opacity(0.62))
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+
+            Color.clear.frame(width: 44, height: 44)
+        }
+        .foregroundStyle(stageTextColor)
+        .opacity(appeared || reduceMotion ? 1 : 0)
+        .offset(y: appeared || reduceMotion ? 0 : -8)
+    }
+
+    private var modePicker: some View {
+        HStack(spacing: 4) {
+            modeButton(title: "Starters", icon: "sparkles", value: 0)
+            modeButton(title: "Customize", icon: "slider.horizontal.3", value: 1)
+        }
+        .padding(4)
+        .background(stageTextColor.opacity(0.07), in: Capsule())
+        .overlay { Capsule().stroke(stageTextColor.opacity(0.13), lineWidth: 1) }
+        .opacity(appeared || reduceMotion ? 1 : 0)
+        .offset(y: appeared || reduceMotion ? 0 : 8)
+    }
+
+    private func modeButton(title: String, icon: String, value: Int) -> some View {
+        Button {
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.20)) {
+                tab = value
+                if value == 1, selectedKind == nil { selectedKind = assetGroups.first?.id }
+            }
+        } label: {
+            Label(title, systemImage: icon)
+                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .foregroundStyle(tab == value ? Color.white : stageTextColor.opacity(0.68))
+                .frame(maxWidth: .infinity, minHeight: 42)
+                .background(tab == value ? morphAccent : Color.clear, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .animation(.easeOut(duration: 0.18), value: tab)
+    }
+
+    private func previewStage(height: CGFloat) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [.white.opacity(0.08), .white.opacity(0.025)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+
+            stageScenery
+
+            if let engine = gameModel.morphPreviewEngine {
+                RustGameSurface(engine: engine, isActive: true, avatarPreviewMode: true)
+                    .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
+                    .transition(.opacity)
+            } else {
+                VStack(spacing: 14) {
+                    ProgressView().tint(.white)
+                    Text("Building your morph…")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.72))
+                }
+            }
+
+            LinearGradient(
+                colors: [.clear, morphStageInk.opacity(0.02), morphStageInk.opacity(0.48)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .allowsHitTesting(false)
+
+            VStack {
+                HStack {
+                    Label("LIVE PREVIEW", systemImage: "sparkles")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .tracking(1.2)
+                        .foregroundStyle(.white.opacity(0.82))
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 32)
+                        .background(.black.opacity(0.28), in: Capsule())
+                    Spacer()
+                }
+                Spacer()
+                HStack(alignment: .bottom) {
+                    Text("Try a move")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.72))
+                    Spacer()
+                    previewActions
+                }
+            }
+            .padding(16)
+        }
+        .frame(height: height)
+        .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                .stroke(.white.opacity(0.13), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.30), radius: 24, y: 14)
+        .scaleEffect(appeared || reduceMotion ? 1 : 0.97)
+        .opacity(appeared || reduceMotion ? 1 : 0)
+    }
+
+    private var stageScenery: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(morphAccent.opacity(0.18))
+                .frame(width: 110, height: 180)
+                .rotationEffect(.degrees(-8))
+                .offset(x: 145, y: 46)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.white.opacity(0.06))
+                .frame(width: 125, height: 120)
+                .rotationEffect(.degrees(7))
+                .offset(x: -145, y: 105)
+            Circle()
+                .fill(morphAccentBright.opacity(0.22))
+                .frame(width: 170, height: 42)
+                .blur(radius: 14)
+                .offset(y: 150)
+        }
+        .allowsHitTesting(false)
+    }
+
+    private var previewActions: some View {
+        HStack(spacing: 8) {
+            previewAction("walk", icon: "figure.walk")
+            previewAction("jump", icon: "figure.jumprope")
+            previewAction("turn", icon: "arrow.clockwise")
+        }
+    }
+
+    private func previewAction(_ action: String, icon: String) -> some View {
+        Button { gameModel.playMorphPreview(action) } label: {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .background(.black.opacity(0.42), in: Circle())
+                .overlay { Circle().stroke(.white.opacity(0.16), lineWidth: 1) }
+        }
+        .buttonStyle(MorphPressButtonStyle())
+        .accessibilityLabel(action.capitalized)
+    }
+
+    private var editorPanel: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Capsule()
+                .fill(.secondary.opacity(0.30))
+                .frame(width: 42, height: 5)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 10)
+
+            categoryStrip
+                .padding(.top, 12)
+
+            Group {
+                if appearance.isLoading {
+                    HStack(spacing: 12) {
+                        ProgressView()
+                        Text("Loading morphs…")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 190)
+                } else if tab == 0 {
+                    starterList
+                } else {
+                    customizeList
+                }
+            }
+            .padding(.top, 24)
+
+            if let feedback = appearance.feedback {
+                Label(
+                    feedback.message,
+                    systemImage: feedback.kind == .error ? "exclamationmark.circle.fill" : "checkmark.circle.fill"
+                )
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .foregroundStyle(feedback.kind == .error ? Color.red : Color.green)
+                .padding(.horizontal, 20)
+                .padding(.top, 18)
+            }
+        }
+        .padding(.bottom, 30)
+        .background(Color(.systemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                .stroke(.primary.opacity(colorScheme == .dark ? 0.10 : 0.04), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.20 : 0.10), radius: 22, y: -2)
+        .offset(y: appeared || reduceMotion ? 0 : 18)
+        .opacity(appeared || reduceMotion ? 1 : 0)
+    }
+
+    private var categoryStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                categoryButton(title: "Starters", icon: "person.3.fill", selected: tab == 0) {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.20)) { tab = 0 }
+                }
+
+                ForEach(assetGroups) { group in
+                    categoryButton(
+                        title: categoryName(group.id),
+                        icon: categoryIcon(group.id),
+                        selected: tab == 1 && activeGroup?.id == group.id
+                    ) {
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.20)) {
+                            tab = 1
+                            selectedKind = group.id
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+        }
+    }
+
+    private func categoryButton(title: String, icon: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 7) {
+                Image(systemName: icon)
+                    .font(.system(size: 18, weight: .semibold))
+                    .frame(width: 46, height: 46)
+                    .foregroundStyle(selected ? Color.white : Color.primary.opacity(0.76))
+                    .background(selected ? morphAccent : Color.secondary.opacity(0.10), in: Circle())
+                Text(title)
+                    .font(.system(size: 11, weight: selected ? .bold : .semibold, design: .rounded))
+                    .foregroundStyle(selected ? morphAccent : Color.secondary)
+                    .lineLimit(1)
+            }
+            .frame(minWidth: 64, minHeight: 70)
+        }
+        .buttonStyle(.plain)
+        .animation(.easeOut(duration: 0.18), value: selected)
     }
 
     private var starterList: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 145), spacing: 10)], spacing: 10) {
-            ForEach(appearance.presets) { preset in
-                let isSelected = preset.id == appearance.draftPresetId
-                Button { model.chooseMorphPreset(preset.id) } label: {
-                    VStack(alignment: .leading, spacing: 5) { Text(preset.displayName).font(.system(size: 16, weight: .bold, design: .rounded)); Text(preset.parts.isEmpty ? "Base morph" : "Ready to play").font(.caption).foregroundStyle(.secondary) }
-                    .frame(maxWidth: .infinity, minHeight: 70, alignment: .leading).padding(14).background(.secondary.opacity(isSelected ? 0.14 : 0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous)).overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(isSelected ? morphCoral : .clear, lineWidth: 2) }
-                }.buttonStyle(.plain).disabled(appearance.isSaving)
-            }
-        }
-    }
+        VStack(alignment: .leading, spacing: 14) {
+            sectionHeader(title: "Starters", detail: "Pick a base, then make it yours.")
 
-    private var customizeList: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ForEach(Dictionary(grouping: appearance.assets.filter { $0.kind != "base" }, by: { $0.kind }).sorted(by: { $0.key < $1.key }), id: \.key) { kind, assets in
-                let selected = kind == "face"
-                    ? appearance.draftFace
-                    : assets.first(where: { appearance.draftParts.contains($0.id) })?.id
-                Menu { Button("None") { if let selected { model.clearMorphPart(selected) } }; ForEach(assets) { asset in Button(asset.displayName) { model.setMorphPart(asset.id) } } } label: {
-                    HStack { Text(kind.capitalized).foregroundStyle(.secondary); Spacer(); Text(assets.first(where: { $0.id == selected })?.displayName ?? "None"); Image(systemName: "chevron.up.chevron.down") }.padding(14).background(.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            if appearance.presets.isEmpty {
+                Text("No starter morphs are available right now.")
+                    .font(.system(size: 15, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 20)
+                    .frame(minHeight: 120)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .top, spacing: 12) {
+                        ForEach(Array(appearance.presets.enumerated()), id: \.element.id) { index, preset in
+                            starterTile(preset, index: index)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 2)
                 }
             }
         }
     }
 
-    private var preview: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Preview").font(.headline)
-            HStack(alignment: .bottom, spacing: 14) {
-                if let engine = gameModel.morphPreviewEngine {
-                    RustGameSurface(engine: engine, isActive: true, avatarPreviewMode: true)
-                        .frame(width: 260, height: 260)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    private func starterTile(_ preset: AppRuntimeMorphPreset, index: Int) -> some View {
+        let isSelected = preset.id == appearance.draftPresetId
+        return Button {
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) {
+                model.chooseMorphPreset(preset.id)
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 9) {
+                ZStack(alignment: .topTrailing) {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color.secondary.opacity(colorScheme == .dark ? 0.13 : 0.075))
+                    morphThumbnail(path: preset.thumbnail, fallbackIndex: index)
+                        .padding(.top, 10)
+                        .padding(.horizontal, 8)
+                    if isSelected {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 12, weight: .black))
+                            .foregroundStyle(.white)
+                            .frame(width: 27, height: 27)
+                            .background(morphAccent, in: Circle())
+                            .padding(8)
+                    }
+                }
+                .frame(width: 132, height: 158)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(isSelected ? morphAccent : Color.primary.opacity(0.06), lineWidth: isSelected ? 2.5 : 1)
+                }
+
+                Text(preset.displayName)
+                    .font(.system(size: 14, weight: isSelected ? .bold : .semibold, design: .rounded))
+                    .foregroundStyle(isSelected ? morphAccent : Color.primary)
+                    .lineLimit(1)
+                    .frame(width: 132)
+            }
+        }
+        .buttonStyle(MorphPressButtonStyle())
+        .disabled(appearance.isSaving)
+        .animation(.easeOut(duration: 0.18), value: isSelected)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    @ViewBuilder
+    private func morphThumbnail(path: String?, fallbackIndex: Int) -> some View {
+        if let url = thumbnailURL(path) {
+            AsyncImage(url: url) { phase in
+                if let image = phase.image {
+                    image.resizable().scaledToFit()
+                } else if phase.error != nil {
+                    fallbackMorphImage(index: fallbackIndex)
                 } else {
-                    ProgressView("Loading 3D preview…").frame(width: 260, height: 260)
+                    ProgressView().tint(morphAccent)
                 }
-                Text(previewName).font(.caption).foregroundStyle(.secondary)
-                HStack(spacing: 8) { ForEach(["walk", "jump", "turn"], id: \.self) { action in Button(action.capitalized) { gameModel.playMorphPreview(action) }.buttonStyle(.bordered) } }
+            }
+        } else {
+            fallbackMorphImage(index: fallbackIndex)
+        }
+    }
+
+    private func fallbackMorphImage(index: Int) -> some View {
+        Image(["MorphNonbinary", "MorphBoy", "MorphGirl"][index % 3])
+            .resizable()
+            .scaledToFit()
+    }
+
+    @ViewBuilder
+    private var customizeList: some View {
+        if let group = activeGroup {
+            VStack(alignment: .leading, spacing: 14) {
+                sectionHeader(title: categoryName(group.id), detail: "Choose the look that feels right.")
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .top, spacing: 12) {
+                        noneTile(for: group)
+                        ForEach(group.assets) { asset in
+                            assetTile(asset, kind: group.id)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 2)
+                }
+            }
+        } else {
+            Text("Customization options are unavailable right now.")
+                .font(.system(size: 15, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 20)
+                .frame(minHeight: 140)
+        }
+    }
+
+    private func noneTile(for group: MorphAssetGroup) -> some View {
+        let selected = selectedAssetID(for: group) == nil
+        return Button {
+            if let assetID = selectedAssetID(for: group) { model.clearMorphPart(assetID) }
+        } label: {
+            VStack(spacing: 9) {
+                ZStack(alignment: .topTrailing) {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.secondary.opacity(colorScheme == .dark ? 0.13 : 0.075))
+                    Image(systemName: "circle.slash")
+                        .font(.system(size: 28, weight: .light))
+                        .foregroundStyle(.secondary)
+                    if selected { selectedBadge }
+                }
+                .frame(width: 108, height: 116)
+                .overlay { selectionOutline(selected, cornerRadius: 16) }
+                Text("None")
+                    .font(.system(size: 13, weight: selected ? .bold : .semibold, design: .rounded))
+                    .foregroundStyle(selected ? morphAccent : Color.primary)
+                    .lineLimit(1)
+                    .frame(width: 108)
             }
         }
+        .buttonStyle(MorphPressButtonStyle())
+        .disabled(selected || appearance.isSaving)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func assetTile(_ asset: AppRuntimeMorphAsset, kind: String) -> some View {
+        let selected = selectedAssetID(forKind: kind) == asset.id
+        return Button {
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) {
+                model.setMorphPart(asset.id)
+            }
+        } label: {
+            VStack(spacing: 9) {
+                ZStack(alignment: .topTrailing) {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.secondary.opacity(colorScheme == .dark ? 0.13 : 0.075))
+                    if let url = thumbnailURL(asset.thumbnail) {
+                        AsyncImage(url: url) { phase in
+                            if let image = phase.image {
+                                image.resizable().scaledToFit()
+                            } else if phase.error != nil {
+                                assetFallback(kind: kind)
+                            } else {
+                                ProgressView().tint(morphAccent)
+                            }
+                        }
+                        .padding(10)
+                    } else {
+                        assetFallback(kind: kind)
+                    }
+                    if selected { selectedBadge }
+                }
+                .frame(width: 108, height: 116)
+                .overlay { selectionOutline(selected, cornerRadius: 16) }
+                Text(asset.displayName)
+                    .font(.system(size: 13, weight: selected ? .bold : .semibold, design: .rounded))
+                    .foregroundStyle(selected ? morphAccent : Color.primary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .frame(width: 108, height: 34, alignment: .top)
+            }
+        }
+        .buttonStyle(MorphPressButtonStyle())
+        .disabled(appearance.isSaving)
+        .animation(.easeOut(duration: 0.18), value: selected)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private var selectedBadge: some View {
+        Image(systemName: "checkmark")
+            .font(.system(size: 10, weight: .black))
+            .foregroundStyle(.white)
+            .frame(width: 24, height: 24)
+            .background(morphAccent, in: Circle())
+            .padding(7)
+    }
+
+    private func selectionOutline(_ selected: Bool, cornerRadius: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .stroke(selected ? morphAccent : Color.primary.opacity(0.06), lineWidth: selected ? 2.5 : 1)
+    }
+
+    private func assetFallback(kind: String) -> some View {
+        Image(systemName: categoryIcon(kind))
+            .font(.system(size: 30, weight: .light))
+            .foregroundStyle(morphAccent.opacity(0.72))
+    }
+
+    private func sectionHeader(title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .foregroundStyle(.primary)
+            Text(detail)
+                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 20)
+    }
+
+    private var saveArea: some View {
+        VStack(spacing: 0) {
+            Divider().opacity(0.45)
+            Button { model.saveMorph() } label: {
+                HStack(spacing: 12) {
+                    if appearance.isSaving {
+                        ProgressView().tint(.white)
+                    } else {
+                        Image(systemName: "square.and.arrow.down.fill")
+                            .font(.system(size: 18, weight: .bold))
+                    }
+                    Text(appearance.isSaving ? "Saving…" : "Save Morph")
+                    Spacer()
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 14, weight: .bold))
+                }
+                .font(.system(size: 17, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 20)
+                .frame(maxWidth: .infinity, minHeight: 58)
+                .background(
+                    LinearGradient(colors: [morphAccent, morphAccentBright], startPoint: .leading, endPoint: .trailing),
+                    in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                )
+                .shadow(color: morphAccent.opacity(0.24), radius: 16, y: 8)
+            }
+            .buttonStyle(MorphPressButtonStyle())
+            .disabled(appearance.isSaving || !appearance.draftCanSave)
+            .opacity(appearance.isSaving || !appearance.draftCanSave ? 0.52 : 1)
+            .frame(maxWidth: 720)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+        }
+        .background(.ultraThinMaterial)
     }
 
     private var previewName: String {
         appearance.presets.first { $0.id == appearance.draftPresetId }?.displayName ?? "Custom morph"
+    }
+
+    private func selectedAssetID(for group: MorphAssetGroup) -> String? {
+        selectedAssetID(forKind: group.id)
+    }
+
+    private func selectedAssetID(forKind kind: String) -> String? {
+        if kind == "face" { return appearance.draftFace }
+        let ids = Set(appearance.draftParts)
+        return assetGroups.first(where: { $0.id == kind })?.assets.first(where: { ids.contains($0.id) })?.id
+    }
+
+    private func thumbnailURL(_ path: String?) -> URL? {
+        guard let path, !path.isEmpty else { return nil }
+        if let url = URL(string: path), url.scheme != nil { return url }
+        return URL(string: path, relativeTo: ClientConfiguration.backendAPIURL)?.absoluteURL
+    }
+
+    private func categoryName(_ kind: String) -> String {
+        switch kind.lowercased() {
+        case "body", "body_type": return "Body"
+        case "clothes", "clothing", "outfit": return "Clothing"
+        case "hair", "hairstyle": return "Hair"
+        case "face", "identity": return "Face"
+        case "accessory", "accessories", "equipment": return "Accessories"
+        default: return kind.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+
+    private func categoryIcon(_ kind: String) -> String {
+        switch kind.lowercased() {
+        case "body", "body_type": return "figure.stand"
+        case "clothes", "clothing", "outfit": return "tshirt"
+        case "hair", "hairstyle": return "comb"
+        case "face", "identity": return "face.smiling"
+        case "accessory", "accessories", "equipment": return "sunglasses"
+        default: return "square.grid.2x2"
+        }
+    }
+
+    private func categoryOrder(_ kind: String) -> String {
+        switch kind.lowercased() {
+        case "body", "body_type": return "0"
+        case "clothes", "clothing", "outfit": return "1"
+        case "hair", "hairstyle": return "2"
+        case "face", "identity": return "3"
+        case "accessory", "accessories", "equipment": return "4"
+        default: return "9-\(kind)"
+        }
     }
 
     private func syncPreviewAppearance() {
@@ -99,5 +701,13 @@ struct MorphSelectionView: View {
         }
         gameModel.updateMorphPreview(source: source, packURLs: urls)
     }
+}
 
+private struct MorphPressButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .opacity(configuration.isPressed ? 0.84 : 1)
+            .animation(.easeOut(duration: 0.14), value: configuration.isPressed)
+    }
 }
