@@ -9,7 +9,6 @@ struct RustGameSurface: UIViewRepresentable {
     let engine: EngineBridge
     let isActive: Bool
     var avatarPreviewMode: Bool = false
-    var handlesPinchZoom: Bool = true
     var onMoveChanged: (CGSize) -> Void = { _ in }
     var onMoveEnded: () -> Void = {}
     var onLookChanged: (CGSize) -> Void = { _ in }
@@ -90,7 +89,6 @@ struct RustGameSurface: UIViewRepresentable {
                 )
             }
             view.usesSplitPreviewControls = surface.avatarPreviewMode
-            view.handlesPinchZoom = surface.handlesPinchZoom
             view.onMoveChanged = surface.onMoveChanged
             view.onMoveEnded = surface.onMoveEnded
             view.onLookChanged = surface.onLookChanged
@@ -202,9 +200,6 @@ final class InteractiveGameView: MTKView {
     var onDrawableSizeChange: ((CGSize) -> Void)?
     var onPointer: ((UInt64, UInt8, CGPoint) -> Bool)?
     var usesSplitPreviewControls = false
-    var handlesPinchZoom = true {
-        didSet { pinchRecognizer?.isEnabled = handlesPinchZoom }
-    }
     var onMoveChanged: ((CGSize) -> Void)?
     var onMoveEnded: (() -> Void)?
     var onLookChanged: ((CGSize) -> Void)?
@@ -221,8 +216,10 @@ final class InteractiveGameView: MTKView {
     private var cameraTouchStarts: [UInt64: CGPoint] = [:]
     private var cameraTouchMoved = false
     private var pinchActive = false
+    // Latch on the second touch, before UIKit crosses its pinch threshold.
+    // A finger left down after pinching must not become an orbit gesture.
+    private var suppressSingleFingerInput = false
     private var previousPinchScale: CGFloat = 1
-    private weak var pinchRecognizer: UIPinchGestureRecognizer?
 
     override init(frame frameRect: CGRect, device: MTLDevice?) {
         super.init(frame: frameRect, device: device)
@@ -236,32 +233,45 @@ final class InteractiveGameView: MTKView {
 
     private func installPinchRecognizer() {
         let recognizer = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
-        recognizer.cancelsTouchesInView = true
+        // Keep touch lifetime accounting intact while the recognizer zooms.
+        // Raw touch handlers suppress movement/orbit for the entire pinch.
+        recognizer.cancelsTouchesInView = false
         recognizer.delaysTouchesBegan = false
-        recognizer.isEnabled = handlesPinchZoom
+        recognizer.delaysTouchesEnded = false
         addGestureRecognizer(recognizer)
-        pinchRecognizer = recognizer
     }
 
     @objc private func handlePinch(_ recognizer: UIPinchGestureRecognizer) {
         switch recognizer.state {
         case .began:
             pinchActive = true
-            previousPinchScale = recognizer.scale
+            suppressSingleFingerInput = true
+            cameraTouchMoved = true
+            previousPinchScale = 1
             onMoveEnded?()
+            onLookEnded?()
             onInteractionChanged?(true)
+            applyPinchScale(recognizer.scale)
         case .changed:
-            guard previousPinchScale > 0, recognizer.scale > 0 else { return }
-            onZoomDelta?(log(recognizer.scale / previousPinchScale))
-            previousPinchScale = recognizer.scale
+            applyPinchScale(recognizer.scale)
         case .ended, .cancelled, .failed:
+            if recognizer.state == .ended { applyPinchScale(recognizer.scale) }
             pinchActive = false
             previousPinchScale = 1
             onZoomEnded?()
-            if cameraTouches.isEmpty { onInteractionChanged?(false) }
+            if cameraTouches.isEmpty {
+                suppressSingleFingerInput = false
+                onInteractionChanged?(false)
+            }
         default:
             break
         }
+    }
+
+    private func applyPinchScale(_ scale: CGFloat) {
+        guard scale.isFinite, scale > 0 else { return }
+        onZoomDelta?(log(scale / previousPinchScale))
+        previousPinchScale = scale
     }
 
     override func layoutSubviews() {
@@ -293,7 +303,9 @@ final class InteractiveGameView: MTKView {
                 cameraTouchStarts[pointerID] = point
                 if cameraTouches.count >= 2 {
                     // A second camera finger is a gesture, never a world tap.
+                    suppressSingleFingerInput = true
                     onMoveEnded?()
+                    onLookEnded?()
                     cameraTouchMoved = true
                 }
             }
@@ -308,7 +320,8 @@ final class InteractiveGameView: MTKView {
             if uiPointers.contains(pointerID) {
                 _ = onPointer?(pointerID, UInt8(CUBACADABRA_UI_POINTER_MOVE), point)
             } else if cameraTouches[pointerID] != nil {
-                if cameraTouches.count == 1, let previous = cameraTouches[pointerID] {
+                if !suppressSingleFingerInput, !pinchActive,
+                   cameraTouches.count == 1, let previous = cameraTouches[pointerID] {
                     if usesSplitPreviewControls,
                        let start = cameraTouchStarts[pointerID],
                        start.x < bounds.midX {
@@ -346,7 +359,10 @@ final class InteractiveGameView: MTKView {
             pointerIDs.removeValue(forKey: ObjectIdentifier(touch))
         }
         if cameraTouches.isEmpty {
-            if !pinchActive { onInteractionChanged?(false) }
+            if !pinchActive {
+                suppressSingleFingerInput = false
+                onInteractionChanged?(false)
+            }
             onLookEnded?()
             if phase == UInt8(CUBACADABRA_UI_POINTER_UP)
                 && wasCameraInteraction
@@ -355,11 +371,6 @@ final class InteractiveGameView: MTKView {
                 onWorldTap?()
             }
             cameraTouchMoved = false
-        } else if cameraTouches.count == 1 {
-            // A finger remaining after a pinch begins a fresh move/orbit gesture.
-            for (pointerID, point) in cameraTouches {
-                cameraTouchStarts[pointerID] = point
-            }
         }
     }
 

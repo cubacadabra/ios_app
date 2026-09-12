@@ -47,7 +47,6 @@ struct MorphSelectionView: View {
     @State private var categoryPage = 0
     @State private var starterPage = 0
     @State private var assetPage = 0
-    @State private var previewMagnificationScale: CGFloat = 1
     private let previewClock = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
 
     private var appearance: AppRuntimeAppearanceSnapshot { model.appearanceSnapshot }
@@ -237,10 +236,10 @@ struct MorphSelectionView: View {
                     engine: engine,
                     isActive: true,
                     avatarPreviewMode: true,
-                    handlesPinchZoom: false,
                     onMoveChanged: { gameModel.morphPreviewMoveChanged(to: $0) },
                     onMoveEnded: { gameModel.morphPreviewMoveEnded() },
                     onLookChanged: { gameModel.morphPreviewLookChanged(to: $0) },
+                    onLookEnded: { gameModel.morphPreviewLookEnded() },
                     onZoomDelta: { gameModel.morphPreviewZoomChangedBy(delta: $0) },
                     onInteractionChanged: { canvasInteractionActive = $0 }
                 )
@@ -271,6 +270,7 @@ struct MorphSelectionView: View {
                         .padding(.horizontal, 12)
                         .frame(minHeight: 32)
                         .background(.black.opacity(0.28), in: Capsule())
+                        .allowsHitTesting(false)
                     Spacer()
                 }
                 Spacer()
@@ -279,6 +279,7 @@ struct MorphSelectionView: View {
                         .font(.system(size: 10, weight: .semibold, design: .rounded))
                         .foregroundStyle(.white.opacity(0.72))
                         .lineLimit(1)
+                        .allowsHitTesting(false)
                     Spacer()
                     previewActions
                 }
@@ -294,24 +295,6 @@ struct MorphSelectionView: View {
         .shadow(color: .black.opacity(0.30), radius: 24, y: 14)
         .scaleEffect(appeared || reduceMotion ? 1 : 0.97)
         .opacity(appeared || reduceMotion ? 1 : 0)
-        .simultaneousGesture(previewZoomGesture)
-    }
-
-    private var previewZoomGesture: some Gesture {
-        MagnificationGesture(minimumScaleDelta: 0.002)
-            .onChanged { scale in
-                guard scale.isFinite, scale > 0,
-                      previewMagnificationScale.isFinite, previewMagnificationScale > 0 else {
-                    previewMagnificationScale = 1
-                    return
-                }
-                let delta = log(scale / previewMagnificationScale)
-                previewMagnificationScale = scale
-                if delta.isFinite, abs(delta) > 0.0001 {
-                    gameModel.morphPreviewZoomChangedBy(delta: delta)
-                }
-            }
-            .onEnded { _ in previewMagnificationScale = 1 }
     }
 
     private var stageScenery: some View {

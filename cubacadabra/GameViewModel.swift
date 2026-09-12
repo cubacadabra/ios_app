@@ -268,6 +268,11 @@ final class GameViewModel: ObservableObject {
         previewGestureLookY += Float(translation.height)
     }
 
+    func morphPreviewLookEnded() {
+        previewGestureLookX = 0
+        previewGestureLookY = 0
+    }
+
     func morphPreviewMoveChanged(to translation: CGSize) {
         let radius: CGFloat = 54
         previewMoveStrafe = Float(min(max(translation.width / radius, -1), 1))
@@ -282,10 +287,6 @@ final class GameViewModel: ObservableObject {
     func morphPreviewZoomChangedBy(delta: CGFloat) {
         guard delta.isFinite else { return }
         previewZoomDelta -= Float(delta * 20)
-        // Apply camera input on the gesture callback as well as the display
-        // clock. This matches gameplay even when SwiftUI coalesces timer
-        // deliveries during a two-finger interaction.
-        tickMorphPreview(at: Date())
     }
 
     func setMorphPreviewAppearance(_ source: String?) {
