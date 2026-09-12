@@ -23,7 +23,7 @@ struct MorphSelectionView: View {
                         .font(.system(size: 15, weight: .bold, design: .rounded)).tracking(1.1).foregroundStyle(.white).padding(.horizontal, 20).frame(minHeight: 56).background(morphCoral, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
                 }.buttonStyle(.plain).disabled(appearance.isSaving || !appearance.draftCanSave)
             }.frame(maxWidth: 620, alignment: .leading).padding(.horizontal, 24).padding(.top, 24).padding(.bottom, 28)
-        }.navigationTitle("Choose your morph").navigationBarTitleDisplayMode(.inline).background(Color(.systemBackground).ignoresSafeArea()).onAppear { model.beginMorphEdit(); syncPreviewAppearance(); Task { await gameModel.load(); syncPreviewAppearance() } }.onChange(of: appearance.draftBase) { _ in syncPreviewAppearance() }.onChange(of: appearance.draftParts) { _ in syncPreviewAppearance() }.onChange(of: appearance.draftFace) { _ in syncPreviewAppearance() }.onReceive(previewClock) { date in gameModel.tickMorphPreview(at: date) }
+        }.navigationTitle("Choose your morph").navigationBarTitleDisplayMode(.inline).background(Color(.systemBackground).ignoresSafeArea()).onAppear { model.beginMorphEdit(); syncPreviewAppearance() }.onChange(of: appearance.draftBase) { _ in syncPreviewAppearance() }.onChange(of: appearance.draftParts) { _ in syncPreviewAppearance() }.onChange(of: appearance.draftFace) { _ in syncPreviewAppearance() }.onChange(of: appearance.assets) { _ in syncPreviewAppearance() }.onReceive(previewClock) { date in gameModel.tickMorphPreview(at: date) }
     }
 
     private var starterList: some View {
@@ -53,7 +53,7 @@ struct MorphSelectionView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Preview").font(.headline)
             HStack(alignment: .bottom, spacing: 14) {
-                if let engine = gameModel.renderEngine {
+                if let engine = gameModel.morphPreviewEngine {
                     RustGameSurface(engine: engine, isActive: true, avatarPreviewMode: true)
                         .frame(width: 260, height: 260)
                         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -76,7 +76,12 @@ struct MorphSelectionView: View {
             "parts": appearance.draftParts, "parameters": [:], "revision": 0]
         if let face = appearance.draftFace { value["face"] = face }
         guard JSONSerialization.isValidJSONObject(value), let data = try? JSONSerialization.data(withJSONObject: value), let source = String(data: data, encoding: .utf8) else { return }
-        gameModel.setMorphPreviewAppearance(source)
+        let ids = [base] + appearance.draftParts + (appearance.draftFace.map { [$0] } ?? [])
+        let urls: [URL] = appearance.assets.compactMap { asset in
+            guard ids.contains(asset.id), let path = asset.artifactURL else { return nil }
+            return URL(string: path, relativeTo: ClientConfiguration.backendAPIURL)?.absoluteURL
+        }
+        gameModel.updateMorphPreview(source: source, packURLs: urls)
     }
 
 }

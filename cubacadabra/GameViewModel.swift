@@ -6,6 +6,11 @@ import UIKit
 
 let gameLog = Logger(subsystem: "com.cubacadabra.app", category: "game")
 
+private let morphPreviewManifest = """
+{"id":"ios-morph-preview","version":"0.0.0","sdkVersion":"0.3.0","package":{"formatVersion":3,"entry":"game.luau"},"displayName":"Morph Preview","lobby":false,"startWorld":"lobby","launch":{"destinationWorld":"lobby","authoritative":false},"world":{"groundSize":12,"gridSize":0,"gridDivisions":0,"spawn":[0,0,0],"showSpawnPad":false}}
+"""
+private let morphPreviewScript = "return {}"
+
 @MainActor
 final class GameViewModel: ObservableObject {
     @Published var package: GamePackage?
@@ -48,6 +53,9 @@ final class GameViewModel: ObservableObject {
     let loader = GamePackageLoader()
     let gameAudio = GameAudio()
     var engine: EngineBridge?
+    @Published var morphPreviewEngine: EngineBridge?
+    private var morphPreviewPackData: [URL: Data] = [:]
+    private var morphPreviewGeneration: UInt64 = 0
     var lastTick: Date?
     var runtimeWorldIDs: [String] = []
     var lobbyEnabled = true
@@ -211,7 +219,7 @@ final class GameViewModel: ObservableObject {
     }
 
     func tickMorphPreview(at date: Date) {
-        guard let engine, frame != nil, !isLoading else { return }
+        guard let engine = morphPreviewEngine else { return }
         guard let previous = previewLastTick else {
             previewLastTick = date
             return
@@ -229,7 +237,6 @@ final class GameViewModel: ObservableObject {
         )
         previewJumpQueued = false
         engine.step(delta)
-        frame = engine.frame()
     }
 
     func playMorphPreview(_ action: String) {
@@ -243,12 +250,49 @@ final class GameViewModel: ObservableObject {
         guard let source,
               var value = (try? JSONSerialization.jsonObject(with: Data(source.utf8))) as? [String: Any],
               value["base"] != nil else { return }
-        previewAppearanceRevision = max(previewAppearanceRevision, engine?.appearanceRevision ?? 0) &+ 1
+        previewAppearanceRevision = max(previewAppearanceRevision, morphPreviewEngine?.appearanceRevision ?? 0) &+ 1
         value["revision"] = previewAppearanceRevision
         guard JSONSerialization.isValidJSONObject(value),
               let data = try? JSONSerialization.data(withJSONObject: value),
               let normalized = String(data: data, encoding: .utf8) else { return }
-        engine?.setLocalAppearance(normalized)
+        morphPreviewEngine?.setLocalAppearance(normalized)
+    }
+
+    func updateMorphPreview(source: String, packURLs: [URL]) {
+        morphPreviewGeneration &+= 1
+        let generation = morphPreviewGeneration
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                var newPacks: [URL: Data] = [:]
+                for url in packURLs where self.morphPreviewPackData[url] == nil {
+                    var request = URLRequest(url: url)
+                    request.timeoutInterval = 5
+                    let (data, response) = try await URLSession.shared.data(for: request)
+                    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), !data.isEmpty else {
+                        throw GamePackageError.httpFailure((response as? HTTPURLResponse)?.statusCode ?? 0)
+                    }
+                    guard data.count <= 64 * 1024 * 1024 else {
+                        throw GamePackageError.invalidMorphPack("preview")
+                    }
+                    newPacks[url] = data
+                }
+                guard generation == self.morphPreviewGeneration else { return }
+                newPacks.forEach { self.morphPreviewPackData[$0.key] = $0.value }
+                if let preview = self.morphPreviewEngine {
+                    newPacks.values.forEach(preview.appendMorphPack)
+                    preview.setLocalAppearance(source)
+                } else {
+                    let preview = try EngineBridge(manifest: morphPreviewManifest, script: morphPreviewScript)
+                    preview.setAuthenticated(self.accountSession.accountID != nil)
+                    preview.setMorphPacks(Array(self.morphPreviewPackData.values))
+                    _ = preview.setLocalAppearance(source)
+                    self.morphPreviewEngine = preview
+                }
+            } catch {
+                gameLog.error("Morph preview load failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
     }
 
     func setMove(strafe: Float, forward: Float) {

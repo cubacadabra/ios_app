@@ -80,6 +80,13 @@ struct AppRuntimeMorphAsset: Decodable, Equatable, Identifiable {
     let kind: String
     let displayName: String
     let thumbnail: String?
+    let artifactURL: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, kind, displayName, thumbnail
+        case artifactURL = "artifact_url"
+    }
+
     var identity: String { id }
 }
 

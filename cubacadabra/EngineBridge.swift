@@ -53,6 +53,7 @@ final class EngineBridge {
     private let handle: OpaquePointer
     private var packageImageAtlas: GameImageAtlas?
     private var morphPacks: [Data] = []
+    private(set) var morphPackVersion = 0
 
     init(manifest: String, script: String) throws {
         let manifestBytes = Array(manifest.utf8)
@@ -239,6 +240,13 @@ final class EngineBridge {
 
     func setMorphPacks(_ packs: [Data]) {
         morphPacks = packs
+        morphPackVersion += 1
+    }
+
+    func appendMorphPack(_ pack: Data) {
+        guard !morphPacks.contains(pack) else { return }
+        morphPacks.append(pack)
+        morphPackVersion += 1
     }
 
     /// Enables the shared neutral character preview scene for an editor

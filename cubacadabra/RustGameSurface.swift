@@ -46,6 +46,7 @@ struct RustGameSurface: UIViewRepresentable {
         private var renderer: OpaquePointer?
         private var engine: EngineBridge?
         private var packageImagesEngine: EngineBridge?
+        private var uploadedMorphPackVersion = -1
         private var lastViewportDescription = ""
         private var lastDrawableSize = CGSize.zero
 
@@ -148,22 +149,16 @@ struct RustGameSurface: UIViewRepresentable {
         }
 
         private func uploadPackageImagesIfNeeded() {
-            guard let renderer, let engine, packageImagesEngine !== engine else { return }
-            NSLog("Cubacadabra uploading package image atlas to Metal renderer")
-            let uploaded = engine.uploadPackageImageAtlas(to: renderer)
-            if !uploaded {
-                rustSurfaceLog.error("Package image atlas upload failed")
-                NSLog("Cubacadabra package image atlas upload failed")
-            } else {
-                NSLog("Cubacadabra package image atlas upload succeeded")
-            }
-            let morphPacksUploaded = engine.uploadMorphPacks(to: renderer)
-            if !morphPacksUploaded {
-                rustSurfaceLog.error("Morph pack upload failed")
-                NSLog("Cubacadabra morph pack upload failed")
-            }
-            if uploaded && morphPacksUploaded {
+            guard let renderer, let engine else { return }
+            let needsImages = packageImagesEngine !== engine
+            let needsMorphs = packageImagesEngine !== engine || uploadedMorphPackVersion != engine.morphPackVersion
+            let uploadedImages = !needsImages || engine.uploadPackageImageAtlas(to: renderer)
+            let uploadedMorphs = !needsMorphs || engine.uploadMorphPacks(to: renderer)
+            if needsImages && !uploadedImages { rustSurfaceLog.error("Package image atlas upload failed") }
+            if needsMorphs && !uploadedMorphs { rustSurfaceLog.error("Morph pack upload failed") }
+            if uploadedImages && uploadedMorphs {
                 packageImagesEngine = engine
+                uploadedMorphPackVersion = engine.morphPackVersion
             }
         }
     }
