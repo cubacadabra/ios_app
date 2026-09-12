@@ -53,6 +53,7 @@ final class EngineBridge {
     private let handle: OpaquePointer
     private var packageImageAtlas: GameImageAtlas?
     private var morphPacks: [Data] = []
+    private var localAppearanceSource: String?
     private(set) var morphPackVersion = 0
 
     init(manifest: String, script: String) throws {
@@ -133,10 +134,14 @@ final class EngineBridge {
     @discardableResult
     func setLocalAppearance(_ source: String) -> UInt8 {
         let bytes = Array(source.utf8)
-        return bytes.withUnsafeBytes { rawBuffer in
+        let status = bytes.withUnsafeBytes { rawBuffer in
             let pointer = rawBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self)
             return engine_set_local_appearance_json(handle, pointer, UInt(bytes.count))
         }
+        if status == 1 || status == 3 || status == 4 {
+            localAppearanceSource = source
+        }
+        return status
     }
 
     func resetView() {
@@ -249,6 +254,8 @@ final class EngineBridge {
         morphPackVersion += 1
     }
 
+    var morphPackCount: Int { morphPacks.count }
+
     /// Enables the shared neutral character preview scene for an editor
     /// surface. Normal game surfaces leave this disabled.
     func setAvatarPreviewMode(_ enabled: Bool, renderer: OpaquePointer) {
@@ -256,8 +263,10 @@ final class EngineBridge {
     }
 
     @discardableResult
-    func uploadMorphPacks(to renderer: OpaquePointer) -> Bool {
-        for pack in morphPacks {
+    func uploadMorphPacks(to renderer: OpaquePointer, startingAt startIndex: Int) -> Int {
+        var nextIndex = min(max(startIndex, 0), morphPacks.count)
+        while nextIndex < morphPacks.count {
+            let pack = morphPacks[nextIndex]
             let accepted = pack.withUnsafeBytes { buffer in
                 engine_renderer_register_morph_pack(
                     renderer,
@@ -265,9 +274,27 @@ final class EngineBridge {
                     UInt(pack.count)
                 ) != 0
             }
-            if !accepted { return false }
+            if !accepted { break }
+            nextIndex += 1
         }
-        return true
+        return nextIndex
+    }
+
+    /// A renderer can first see an appearance before an asynchronously loaded
+    /// morph pack is resident. Advance the appearance revision after uploads
+    /// so the renderer resolves that same selection again with the new assets.
+    @discardableResult
+    func refreshLocalAppearanceAfterMorphPackUpload() -> Bool {
+        guard let source = localAppearanceSource,
+              var value = (try? JSONSerialization.jsonObject(with: Data(source.utf8))) as? [String: Any]
+        else { return true }
+        value["revision"] = appearanceRevision &+ 1
+        guard JSONSerialization.isValidJSONObject(value),
+              let data = try? JSONSerialization.data(withJSONObject: value),
+              let normalized = String(data: data, encoding: .utf8)
+        else { return false }
+        let status = setLocalAppearance(normalized)
+        return status == 1 || status == 3 || status == 4
     }
 
     @discardableResult

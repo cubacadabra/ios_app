@@ -3,12 +3,29 @@ import SwiftUI
 
 private let morphCoral = Color(red: 0.91, green: 0.39, blue: 0.29)
 
+private struct MorphPreviewSelection: Equatable {
+    let base: String?
+    let parts: [String]
+    let face: String?
+    let renderJSON: String?
+    let assets: [AppRuntimeMorphAsset]
+}
+
 struct MorphSelectionView: View {
     @ObservedObject var model: AppViewModel
     @ObservedObject var gameModel: GameViewModel
     @State private var tab = 0
     private let previewClock = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
     private var appearance: AppRuntimeAppearanceSnapshot { model.appearanceSnapshot }
+    private var previewSelection: MorphPreviewSelection {
+        MorphPreviewSelection(
+            base: appearance.draftBase,
+            parts: appearance.draftParts,
+            face: appearance.draftFace,
+            renderJSON: appearance.draftRenderJson,
+            assets: appearance.assets
+        )
+    }
 
     var body: some View {
         ScrollView {
@@ -23,7 +40,7 @@ struct MorphSelectionView: View {
                         .font(.system(size: 15, weight: .bold, design: .rounded)).tracking(1.1).foregroundStyle(.white).padding(.horizontal, 20).frame(minHeight: 56).background(morphCoral, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
                 }.buttonStyle(.plain).disabled(appearance.isSaving || !appearance.draftCanSave)
             }.frame(maxWidth: 620, alignment: .leading).padding(.horizontal, 24).padding(.top, 24).padding(.bottom, 28)
-        }.navigationTitle("Choose your morph").navigationBarTitleDisplayMode(.inline).background(Color(.systemBackground).ignoresSafeArea()).onAppear { model.beginMorphEdit(); syncPreviewAppearance() }.onChange(of: appearance.draftBase) { _ in syncPreviewAppearance() }.onChange(of: appearance.draftParts) { _ in syncPreviewAppearance() }.onChange(of: appearance.draftFace) { _ in syncPreviewAppearance() }.onChange(of: appearance.draftRenderJson) { _ in syncPreviewAppearance() }.onChange(of: appearance.assets) { _ in syncPreviewAppearance() }.onReceive(previewClock) { date in gameModel.tickMorphPreview(at: date) }
+        }.navigationTitle("Choose your morph").navigationBarTitleDisplayMode(.inline).background(Color(.systemBackground).ignoresSafeArea()).onAppear { model.beginMorphEdit(); syncPreviewAppearance() }.onChange(of: previewSelection) { _ in syncPreviewAppearance() }.onReceive(previewClock) { date in gameModel.tickMorphPreview(at: date) }
     }
 
     private var starterList: some View {
@@ -41,7 +58,9 @@ struct MorphSelectionView: View {
     private var customizeList: some View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(Dictionary(grouping: appearance.assets.filter { $0.kind != "base" }, by: { $0.kind }).sorted(by: { $0.key < $1.key }), id: \.key) { kind, assets in
-                let selected = assets.first(where: { appearance.draftParts.contains($0.id) })?.id ?? appearance.draftFace
+                let selected = kind == "face"
+                    ? appearance.draftFace
+                    : assets.first(where: { appearance.draftParts.contains($0.id) })?.id
                 Menu { Button("None") { if let selected { model.clearMorphPart(selected) } }; ForEach(assets) { asset in Button(asset.displayName) { model.setMorphPart(asset.id) } } } label: {
                     HStack { Text(kind.capitalized).foregroundStyle(.secondary); Spacer(); Text(assets.first(where: { $0.id == selected })?.displayName ?? "None"); Image(systemName: "chevron.up.chevron.down") }.padding(14).background(.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }

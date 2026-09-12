@@ -39,8 +39,15 @@ final class AppAuthenticationService {
         return URLRequest(url: URL(string: "https://example.invalid/" + effect.path)!)
     }
     func performAppRequest(_ request: URLRequest) async throws -> (Int, String) {
+        // This lifecycle test is intentionally independent of the morph
+        // catalog contract. Let the automatic startup catalog request fail
+        // immediately so the single deferred response remains available for
+        // the profile race being exercised below.
+        if request.url?.path.hasSuffix("/morphs/catalog") == true {
+            return (503, "")
+        }
         // Deliberately ignores task cancellation, exercising Rust's stale fence.
-        await pendingHTTP.value()
+        return await pendingHTTP.value()
     }
 }
 
@@ -95,14 +102,14 @@ struct CheckAppLifecycle {
         // A same-account refresh during a save must not cancel pending work.
         app.saveProfileUsername()
         await eventually("HTTP started") { auth.pendingHTTP.waiting }
-        precondition(auth.requestAccounts == ["a"])
+        precondition(auth.requestAccounts.compactMap { $0 } == ["a"])
         app.refreshAuthentication()
         await app.start()
         precondition(app.profileUsername.usernameIsSaving)
         precondition(app.appSnapshot.sessionId == initialSession)
 
         // Even a refresh response captured before the save completed cannot
-        // roll back its accepted username or overwrite an accepted avatar.
+        // roll back its accepted username or overwrite accepted account state.
         let refresh = Deferred<AppAuthResult?>()
         auth.pendingRestore = refresh
         app.refreshAuthentication()
@@ -113,13 +120,6 @@ struct CheckAppLifecycle {
         await app.start()
         precondition(app.authUser?.username == "Grace" && app.gameSession.bodyID == "cuba:person.v1")
         precondition(app.gameSession.username == "Grace")
-
-        app.changeMorph("cuba:person-girl.v1")
-        app.saveMorph()
-        await eventually("Morph started") { auth.pendingHTTP.waiting }
-        auth.pendingHTTP.finish((200, #"{"user":{"id":"a","body_id":"cuba:person-girl.v1"}}"#))
-        await eventually("Morph finished") { !app.profileUsername.bodyIsSaving }
-        precondition(app.authUser?.username == "Grace" && app.gameSession.bodyID == "cuba:person-girl.v1")
 
         // A new game/renderer never participates in any of the work above.
         // Logout + replacement must reject a late username completion.

@@ -47,6 +47,7 @@ struct RustGameSurface: UIViewRepresentable {
         private var engine: EngineBridge?
         private var packageImagesEngine: EngineBridge?
         private var uploadedMorphPackVersion = -1
+        private var uploadedMorphPackCount = 0
         private var lastViewportDescription = ""
         private var lastDrawableSize = CGSize.zero
 
@@ -117,6 +118,8 @@ struct RustGameSurface: UIViewRepresentable {
                 self.renderer = nil
             }
             packageImagesEngine = nil
+            uploadedMorphPackVersion = -1
+            uploadedMorphPackCount = 0
             engine = nil
         }
 
@@ -151,11 +154,27 @@ struct RustGameSurface: UIViewRepresentable {
         private func uploadPackageImagesIfNeeded() {
             guard let renderer, let engine else { return }
             let needsImages = packageImagesEngine !== engine
-            let needsMorphs = packageImagesEngine !== engine || uploadedMorphPackVersion != engine.morphPackVersion
+            let engineChanged = packageImagesEngine !== engine
+            if engineChanged {
+                uploadedMorphPackVersion = -1
+                uploadedMorphPackCount = 0
+            }
+            let needsMorphs = engineChanged || uploadedMorphPackVersion != engine.morphPackVersion
             let uploadedImages = !needsImages || engine.uploadPackageImageAtlas(to: renderer)
-            let uploadedMorphs = !needsMorphs || engine.uploadMorphPacks(to: renderer)
+            let previousMorphPackCount = uploadedMorphPackCount
+            if needsMorphs {
+                uploadedMorphPackCount = engine.uploadMorphPacks(
+                    to: renderer,
+                    startingAt: uploadedMorphPackCount
+                )
+            }
+            let uploadedMorphs = !needsMorphs || uploadedMorphPackCount == engine.morphPackCount
+            let registeredNewMorphs = uploadedMorphPackCount > previousMorphPackCount
             if needsImages && !uploadedImages { rustSurfaceLog.error("Package image atlas upload failed") }
             if needsMorphs && !uploadedMorphs { rustSurfaceLog.error("Morph pack upload failed") }
+            if registeredNewMorphs && !engine.refreshLocalAppearanceAfterMorphPackUpload() {
+                rustSurfaceLog.error("Morph appearance refresh after pack upload failed")
+            }
             if uploadedImages && uploadedMorphs {
                 packageImagesEngine = engine
                 uploadedMorphPackVersion = engine.morphPackVersion
