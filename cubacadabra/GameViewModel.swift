@@ -76,6 +76,8 @@ final class GameViewModel: ObservableObject {
     private var previewZoomDelta: Float = 0
     private var previewMoveForward: Float = 0
     private var previewMoveStrafe: Float = 0
+    private var previewInitialZoomPending = true
+    private var previewCatalogRelease: String?
     private var previewActionUntil: Date = .distantPast
     private var previewAppearanceRevision: UInt32 = 0
     var noticeTask: Task<Void, Never>?
@@ -235,6 +237,7 @@ final class GameViewModel: ObservableObject {
         let delta = Float(min(max(date.timeIntervalSince(previous), 0), 0.05))
         let active = date < previewActionUntil
         let forward = min(max((active ? previewForward : 0) + previewMoveForward, -1), 1)
+        let initialZoom: Float = previewInitialZoomPending ? -6.5 : 0
         engine.setInput(
             forward: forward,
             strafe: previewMoveStrafe,
@@ -243,8 +246,9 @@ final class GameViewModel: ObservableObject {
             climb: false,
             lookX: (active ? previewLookX : 0) + previewGestureLookX,
             lookY: previewGestureLookY,
-            zoomDelta: previewZoomDelta
+            zoomDelta: previewZoomDelta + initialZoom
         )
+        previewInitialZoomPending = false
         previewJumpQueued = false
         previewGestureLookX = 0
         previewGestureLookY = 0
@@ -276,7 +280,12 @@ final class GameViewModel: ObservableObject {
     }
 
     func morphPreviewZoomChangedBy(delta: CGFloat) {
+        guard delta.isFinite else { return }
         previewZoomDelta -= Float(delta * 20)
+        // Apply camera input on the gesture callback as well as the display
+        // clock. This matches gameplay even when SwiftUI coalesces timer
+        // deliveries during a two-finger interaction.
+        tickMorphPreview(at: Date())
     }
 
     func setMorphPreviewAppearance(_ source: String?) {
@@ -295,7 +304,21 @@ final class GameViewModel: ObservableObject {
         }
     }
 
-    func updateMorphPreview(source: String, packURLs: [URL]) {
+    func updateMorphPreview(source: String, packURLs: [URL], catalogRelease: String?) {
+        if previewCatalogRelease != catalogRelease {
+            previewCatalogRelease = catalogRelease
+            morphPreviewGeneration &+= 1
+            morphPreviewPackData.removeAll()
+            morphPreviewEngine = nil
+            previewLastTick = nil
+            previewAppearanceRevision = 0
+            previewInitialZoomPending = true
+            previewZoomDelta = 0
+            previewGestureLookX = 0
+            previewGestureLookY = 0
+            previewMoveForward = 0
+            previewMoveStrafe = 0
+        }
         morphPreviewGeneration &+= 1
         let generation = morphPreviewGeneration
         Task { [weak self] in
@@ -323,6 +346,8 @@ final class GameViewModel: ObservableObject {
                     let preview = try EngineBridge(manifest: morphPreviewManifest, script: morphPreviewScript)
                     preview.setAuthenticated(self.accountSession.accountID != nil)
                     preview.setMorphPacks(Array(self.morphPreviewPackData.values))
+                    self.previewLastTick = nil
+                    self.previewInitialZoomPending = true
                     self.morphPreviewEngine = preview
                     self.setMorphPreviewAppearance(source)
                 }

@@ -117,6 +117,11 @@ final class AppAuthenticationService: NSObject {
             throw AppProfileError.unavailable
         }
         var request = URLRequest(url: url)
+        if url.path == "/morphs/catalog" {
+            // The editor explicitly refreshes on entry. Revalidate rather than
+            // showing a recently cached release after local publish or rollout.
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+        }
         request.httpMethod = effect.method
         if effect.accountId != nil {
             guard let tokens = loadTokens() else { throw AppProfileError.unauthorized }

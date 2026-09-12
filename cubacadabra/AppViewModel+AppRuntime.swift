@@ -6,6 +6,7 @@ extension AppViewModel {
     var safetySnapshot: AppRuntimeSafetySnapshot { appSnapshot.safety }
     var appearanceSnapshot: AppRuntimeAppearanceSnapshot { appSnapshot.appearance }
 
+    func loadAppearanceCatalog() { dispatchApp(["type": "load_appearance_catalog"]) }
     func beginProfileUsernameEdit() { dispatchApp(["type": "begin_username_edit"]) }
     func changeProfileUsername(_ value: String) { dispatchApp(["type": "username_changed", "value": value]) }
     func saveProfileUsername() { dispatchApp(["type": "save_username"]) }

@@ -9,6 +9,7 @@ struct RustGameSurface: UIViewRepresentable {
     let engine: EngineBridge
     let isActive: Bool
     var avatarPreviewMode: Bool = false
+    var handlesPinchZoom: Bool = true
     var onMoveChanged: (CGSize) -> Void = { _ in }
     var onMoveEnded: () -> Void = {}
     var onLookChanged: (CGSize) -> Void = { _ in }
@@ -89,6 +90,7 @@ struct RustGameSurface: UIViewRepresentable {
                 )
             }
             view.usesSplitPreviewControls = surface.avatarPreviewMode
+            view.handlesPinchZoom = surface.handlesPinchZoom
             view.onMoveChanged = surface.onMoveChanged
             view.onMoveEnded = surface.onMoveEnded
             view.onLookChanged = surface.onLookChanged
@@ -200,6 +202,9 @@ final class InteractiveGameView: MTKView {
     var onDrawableSizeChange: ((CGSize) -> Void)?
     var onPointer: ((UInt64, UInt8, CGPoint) -> Bool)?
     var usesSplitPreviewControls = false
+    var handlesPinchZoom = true {
+        didSet { pinchRecognizer?.isEnabled = handlesPinchZoom }
+    }
     var onMoveChanged: ((CGSize) -> Void)?
     var onMoveEnded: (() -> Void)?
     var onLookChanged: ((CGSize) -> Void)?
@@ -217,6 +222,7 @@ final class InteractiveGameView: MTKView {
     private var cameraTouchMoved = false
     private var pinchActive = false
     private var previousPinchScale: CGFloat = 1
+    private weak var pinchRecognizer: UIPinchGestureRecognizer?
 
     override init(frame frameRect: CGRect, device: MTLDevice?) {
         super.init(frame: frameRect, device: device)
@@ -232,7 +238,9 @@ final class InteractiveGameView: MTKView {
         let recognizer = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
         recognizer.cancelsTouchesInView = true
         recognizer.delaysTouchesBegan = false
+        recognizer.isEnabled = handlesPinchZoom
         addGestureRecognizer(recognizer)
+        pinchRecognizer = recognizer
     }
 
     @objc private func handlePinch(_ recognizer: UIPinchGestureRecognizer) {

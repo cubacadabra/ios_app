@@ -6,6 +6,7 @@ private let morphAccentBright = Color(red: 0.50, green: 0.43, blue: 1.00)
 private let morphStageInk = Color(red: 0.035, green: 0.055, blue: 0.12)
 
 private struct MorphPreviewSelection: Equatable {
+    let release: String?
     let base: String?
     let parts: [String]
     let face: String?
@@ -46,12 +47,14 @@ struct MorphSelectionView: View {
     @State private var categoryPage = 0
     @State private var starterPage = 0
     @State private var assetPage = 0
+    @State private var previewMagnificationScale: CGFloat = 1
     private let previewClock = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
 
     private var appearance: AppRuntimeAppearanceSnapshot { model.appearanceSnapshot }
 
     private var previewSelection: MorphPreviewSelection {
         MorphPreviewSelection(
+            release: appearance.release,
             base: appearance.draftBase,
             parts: appearance.draftParts,
             face: appearance.draftFace,
@@ -121,6 +124,7 @@ struct MorphSelectionView: View {
         .navigationBarHidden(true)
         .safeAreaInset(edge: .bottom, spacing: 0) { saveArea }
         .onAppear {
+            model.loadAppearanceCatalog()
             model.beginMorphEdit()
             prepareMorphPreview()
             guard !appeared else { return }
@@ -233,6 +237,7 @@ struct MorphSelectionView: View {
                     engine: engine,
                     isActive: true,
                     avatarPreviewMode: true,
+                    handlesPinchZoom: false,
                     onMoveChanged: { gameModel.morphPreviewMoveChanged(to: $0) },
                     onMoveEnded: { gameModel.morphPreviewMoveEnded() },
                     onLookChanged: { gameModel.morphPreviewLookChanged(to: $0) },
@@ -289,6 +294,24 @@ struct MorphSelectionView: View {
         .shadow(color: .black.opacity(0.30), radius: 24, y: 14)
         .scaleEffect(appeared || reduceMotion ? 1 : 0.97)
         .opacity(appeared || reduceMotion ? 1 : 0)
+        .simultaneousGesture(previewZoomGesture)
+    }
+
+    private var previewZoomGesture: some Gesture {
+        MagnificationGesture(minimumScaleDelta: 0.002)
+            .onChanged { scale in
+                guard scale.isFinite, scale > 0,
+                      previewMagnificationScale.isFinite, previewMagnificationScale > 0 else {
+                    previewMagnificationScale = 1
+                    return
+                }
+                let delta = log(scale / previewMagnificationScale)
+                previewMagnificationScale = scale
+                if delta.isFinite, abs(delta) > 0.0001 {
+                    gameModel.morphPreviewZoomChangedBy(delta: delta)
+                }
+            }
+            .onEnded { _ in previewMagnificationScale = 1 }
     }
 
     private var stageScenery: some View {
@@ -827,7 +850,11 @@ struct MorphSelectionView: View {
             guard ids.contains(asset.id), let path = asset.artifactURL else { return nil }
             return URL(string: path, relativeTo: ClientConfiguration.backendAPIURL)?.absoluteURL
         }
-        gameModel.updateMorphPreview(source: source, packURLs: urls)
+        gameModel.updateMorphPreview(
+            source: source,
+            packURLs: urls,
+            catalogRelease: appearance.release
+        )
     }
 
     private func prepareMorphPreview() {
