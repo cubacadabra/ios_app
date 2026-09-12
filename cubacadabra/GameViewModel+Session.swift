@@ -21,6 +21,7 @@ extension GameViewModel {
             engine?.setIgnoredPlayerIDs(blockedPlayerIDs)
         }
         worldSocket.setAccessToken(session.accessToken)
+        if let appearanceJSON = session.appearanceJSON { worldSocket.setAppearance(appearanceJSON) }
         if let name = session.username, !name.isEmpty {
             worldSocket.adoptUsername(name)
             username = name
@@ -29,12 +30,16 @@ extension GameViewModel {
         engine?.setAuthenticated(session.accountID != nil)
         // Full appearance comes from the authenticated world session; the
         // accepted body is also applied when updating/recreating a local engine.
-        if previous.bodyID != session.bodyID, let engine { applyAccountAppearance(to: engine) }
+        if previous.bodyID != session.bodyID || previous.appearanceJSON != session.appearanceJSON, let engine { applyAccountAppearance(to: engine) }
     }
 
     func applyAccountAppearance(to engine: EngineBridge) {
+        if let appearanceJSON = accountSession.appearanceJSON {
+            _ = engine.setLocalAppearance(appearanceJSON)
+            return
+        }
         guard let body = accountSession.bodyID else { return }
-        let appearance = WorldAppearance(version: 1, body: body, face: serverAppearance?.face,
+        let appearance = WorldAppearance(version: 1, base: nil, parts: nil, parameters: nil, body: body, face: serverAppearance?.face,
             outfit: serverAppearance?.outfit, equipment: serverAppearance?.equipment,
             colors: serverAppearance?.colors, revision: engine.appearanceRevision &+ 1)
         guard let data = try? JSONEncoder().encode(appearance),

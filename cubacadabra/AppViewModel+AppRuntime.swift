@@ -4,14 +4,17 @@ extension AppViewModel {
     var profileUsername: AppRuntimeProfileSnapshot { appSnapshot.profile }
     var catalogSnapshot: AppRuntimeCatalogSnapshot { appSnapshot.catalog }
     var safetySnapshot: AppRuntimeSafetySnapshot { appSnapshot.safety }
+    var appearanceSnapshot: AppRuntimeAppearanceSnapshot { appSnapshot.appearance }
 
     func beginProfileUsernameEdit() { dispatchApp(["type": "begin_username_edit"]) }
     func changeProfileUsername(_ value: String) { dispatchApp(["type": "username_changed", "value": value]) }
     func saveProfileUsername() { dispatchApp(["type": "save_username"]) }
 
-    func beginMorphEdit() { dispatchApp(["type": "begin_body_edit"]) }
-    func changeMorph(_ bodyID: String) { dispatchApp(["type": "body_changed", "body_id": bodyID]) }
-    func saveMorph() { dispatchApp(["type": "save_body"]) }
+    func beginMorphEdit() { dispatchApp(["type": "begin_appearance_edit"]) }
+    func chooseMorphPreset(_ presetID: String) { dispatchApp(["type": "select_morph_preset", "preset_id": presetID]) }
+    func setMorphPart(_ assetID: String) { dispatchApp(["type": "set_morph_part", "asset_id": assetID]) }
+    func clearMorphPart(_ assetID: String) { dispatchApp(["type": "clear_morph_part", "asset_id": assetID]) }
+    func saveMorph() { dispatchApp(["type": "save_appearance"]) }
     func loadCatalog(page: Int = 1, pageSize: Int = 20) {
         dispatchApp(["type": "load_catalog", "page": page, "page_size": pageSize])
     }
@@ -52,10 +55,22 @@ extension AppViewModel {
             "body_id": bodyID,
             "date_of_birth": authUser?.dateOfBirth as Any? ?? NSNull(),
         ])
+        dispatchApp(["type": "load_appearance_catalog"])
+    }
+
+    func appearanceWireJSON() -> String? {
+        let appearance = appSnapshot.appearance
+        guard let base = appearance.selectedBase else { return nil }
+        var value: [String: Any] = ["version": 2, "base": base, "parts": appearance.selectedParts,
+            "parameters": [:], "revision": 0]
+        if let face = appearance.selectedFace { value["face"] = face }
+        guard JSONSerialization.isValidJSONObject(value), let data = try? JSONSerialization.data(withJSONObject: value) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     private func dispatchApp(_ action: [String: Any]) {
         let previousBlockedUserIDs = appSnapshot.safety.blockedUserIDs
+        let previousAppearanceJSON = appearanceWireJSON()
         profileRevision &+= 1
         appRuntime.dispatch(action)
         appSnapshot = appRuntime.snapshot()
@@ -79,6 +94,9 @@ extension AppViewModel {
             authUser = user
         }
         if previousBlockedUserIDs != appSnapshot.safety.blockedUserIDs {
+            publishGameSession()
+        }
+        if previousAppearanceJSON != appearanceWireJSON() {
             publishGameSession()
         }
         finishBirthdayWaiterIfReady()

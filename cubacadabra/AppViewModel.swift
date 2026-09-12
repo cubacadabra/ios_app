@@ -8,6 +8,7 @@ struct AppGameSession: Equatable {
     var accessToken: String?
     var username: String?
     var bodyID: String?
+    var appearanceJSON: String?
     var blockedUserIDs: Set<String> = []
 }
 
@@ -177,6 +178,7 @@ final class AppViewModel: ObservableObject {
         gameSession = AppGameSession(sessionID: appSnapshot.sessionId, accountID: authUser?.id,
             accessToken: accessToken,
             username: authUser?.username, bodyID: authUser?.bodyID,
+            appearanceJSON: appearanceWireJSON(),
             blockedUserIDs: Set(appSnapshot.safety.blockedUserIDs))
     }
 }

@@ -34,6 +34,9 @@ struct WorldPresenceEvent {
 
 struct WorldAppearance: Codable, Equatable {
     let version: UInt16?
+    let base: String?
+    let parts: [String]?
+    let parameters: [String: String]?
     let body: String?
     let face: String?
     let outfit: String?

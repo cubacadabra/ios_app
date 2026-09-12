@@ -54,7 +54,11 @@ extension GameViewModel {
         }
         if let appearance = event.appearance {
             serverAppearance = appearance
-            let localAppearance = WorldAppearance(version: appearance.version, body: appearance.body, face: appearance.face, outfit: appearance.outfit, equipment: appearance.equipment, colors: appearance.colors, revision: max(appearance.revision ?? 0, (engine?.appearanceRevision ?? 0) + 1))
+            if appearance.version == 2, let data = try? JSONEncoder().encode(appearance), let source = String(data: data, encoding: .utf8) {
+                _ = engine?.setLocalAppearance(source)
+                return
+            }
+            let localAppearance = WorldAppearance(version: appearance.version, base: nil, parts: nil, parameters: nil, body: appearance.body, face: appearance.face, outfit: appearance.outfit, equipment: appearance.equipment, colors: appearance.colors, revision: max(appearance.revision ?? 0, (engine?.appearanceRevision ?? 0) + 1))
             if let data = try? JSONEncoder().encode(localAppearance), let source = String(data: data, encoding: .utf8) { _ = engine?.setLocalAppearance(source) }
         }
     }

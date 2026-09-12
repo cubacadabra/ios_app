@@ -75,6 +75,40 @@ struct AppRuntimeCatalogSnapshot: Decodable, Equatable {
     }
 }
 
+struct AppRuntimeMorphAsset: Decodable, Equatable, Identifiable {
+    let id: String
+    let kind: String
+    let displayName: String
+    let thumbnail: String?
+    var identity: String { id }
+}
+
+struct AppRuntimeMorphPreset: Decodable, Equatable, Identifiable {
+    let id: String
+    let displayName: String
+    let base: String
+    let parts: [String]
+    let face: String?
+    let thumbnail: String?
+    var identity: String { id }
+}
+
+struct AppRuntimeAppearanceSnapshot: Decodable, Equatable {
+    let release: String?
+    let assets: [AppRuntimeMorphAsset]
+    let presets: [AppRuntimeMorphPreset]
+    let selectedBase: String?
+    let selectedParts: [String]
+    let selectedFace: String?
+    let draftBase: String?
+    let draftParts: [String]
+    let draftFace: String?
+    let draftCanSave: Bool
+    let isLoading: Bool
+    let isSaving: Bool
+    let feedback: AppRuntimeCatalogFeedback?
+}
+
 struct AppRuntimeProfileSnapshot: Decodable, Equatable {
     let username: String?
     let usernameDraft: String
@@ -99,6 +133,7 @@ struct AppRuntimeSnapshot: Decodable {
     let profile: AppRuntimeProfileSnapshot
     let catalog: AppRuntimeCatalogSnapshot
     let safety: AppRuntimeSafetySnapshot
+    let appearance: AppRuntimeAppearanceSnapshot
 
     private enum CodingKeys: String, CodingKey {
         case protocolVersion
@@ -107,6 +142,7 @@ struct AppRuntimeSnapshot: Decodable {
         case profile
         case catalog
         case safety
+        case appearance
     }
 }
 
