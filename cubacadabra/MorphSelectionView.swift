@@ -11,6 +11,7 @@ private struct MorphPreviewSelection: Equatable {
     let face: String?
     let renderJSON: String?
     let assets: [AppRuntimeMorphAsset]
+    let presets: [AppRuntimeMorphPreset]
 }
 
 private struct MorphAssetGroup: Identifiable {
@@ -27,6 +28,7 @@ struct MorphSelectionView: View {
     @State private var tab = 0
     @State private var selectedKind: String?
     @State private var appeared = false
+    @State private var didPrepareInitialSelection = false
     private let previewClock = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
 
     private var appearance: AppRuntimeAppearanceSnapshot { model.appearanceSnapshot }
@@ -37,7 +39,8 @@ struct MorphSelectionView: View {
             parts: appearance.draftParts,
             face: appearance.draftFace,
             renderJSON: appearance.draftRenderJson,
-            assets: appearance.assets
+            assets: appearance.assets,
+            presets: appearance.presets
         )
     }
 
@@ -60,36 +63,33 @@ struct MorphSelectionView: View {
             ZStack {
                 stageBackdrop
 
-                ScrollView {
-                    VStack(spacing: 0) {
-                        editorHeader
-                            .padding(.horizontal, 20)
-                            .padding(.top, 10)
+                VStack(spacing: 0) {
+                    editorHeader
+                        .padding(.horizontal, 20)
+                        .padding(.top, 4)
 
-                        modePicker
-                            .frame(maxWidth: 500)
-                            .padding(.horizontal, 24)
-                            .padding(.top, 16)
+                    modePicker
+                        .frame(maxWidth: 500)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 8)
 
-                        previewStage(height: min(max(proxy.size.width * 1.04, 372), 480))
-                            .frame(maxWidth: 760)
-                            .padding(.horizontal, 12)
-                            .padding(.top, 10)
+                    previewStage(height: min(max(proxy.size.height * 0.32, 238), 340))
+                        .frame(maxWidth: 760)
+                        .padding(.horizontal, 12)
+                        .padding(.top, 8)
 
-                        editorPanel
-                            .frame(maxWidth: 760)
-                            .padding(.top, -6)
-                    }
-                    .frame(maxWidth: .infinity)
+                    editorPanel
+                        .frame(maxWidth: 760, maxHeight: .infinity, alignment: .top)
+                        .padding(.top, -6)
                 }
-                .scrollIndicators(.hidden)
+                .frame(maxWidth: .infinity)
             }
         }
         .navigationBarHidden(true)
         .safeAreaInset(edge: .bottom, spacing: 0) { saveArea }
         .onAppear {
             model.beginMorphEdit()
-            syncPreviewAppearance()
+            prepareMorphPreview()
             guard !appeared else { return }
             if reduceMotion {
                 appeared = true
@@ -97,7 +97,7 @@ struct MorphSelectionView: View {
                 withAnimation(.easeOut(duration: 0.38)) { appeared = true }
             }
         }
-        .onChange(of: previewSelection) { _ in syncPreviewAppearance() }
+        .onChange(of: previewSelection) { _ in prepareMorphPreview() }
         .onReceive(previewClock) { date in gameModel.tickMorphPreview(at: date) }
     }
 
@@ -196,7 +196,13 @@ struct MorphSelectionView: View {
             stageScenery
 
             if let engine = gameModel.morphPreviewEngine {
-                RustGameSurface(engine: engine, isActive: true, avatarPreviewMode: true)
+                RustGameSurface(
+                    engine: engine,
+                    isActive: true,
+                    avatarPreviewMode: true,
+                    onLookChanged: { gameModel.morphPreviewLookChanged(to: $0) },
+                    onZoomDelta: { gameModel.morphPreviewZoomChangedBy(delta: $0) }
+                )
                     .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
                     .transition(.opacity)
             } else {
@@ -228,9 +234,10 @@ struct MorphSelectionView: View {
                 }
                 Spacer()
                 HStack(alignment: .bottom) {
-                    Text("Try a move")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    Text("Drag to orbit · Pinch to zoom")
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
                         .foregroundStyle(.white.opacity(0.72))
+                        .lineLimit(1)
                     Spacer()
                     previewActions
                 }
@@ -301,35 +308,40 @@ struct MorphSelectionView: View {
             categoryStrip
                 .padding(.top, 12)
 
-            Group {
-                if appearance.isLoading {
-                    HStack(spacing: 12) {
-                        ProgressView()
-                        Text("Loading morphs…")
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    Group {
+                        if appearance.isLoading {
+                            HStack(spacing: 12) {
+                                ProgressView()
+                                Text("Loading morphs…")
+                                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            }
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, minHeight: 190)
+                        } else if tab == 0 {
+                            starterList
+                        } else {
+                            customizeList
+                        }
                     }
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 190)
-                } else if tab == 0 {
-                    starterList
-                } else {
-                    customizeList
-                }
-            }
-            .padding(.top, 24)
+                    .padding(.top, 20)
 
-            if let feedback = appearance.feedback {
-                Label(
-                    feedback.message,
-                    systemImage: feedback.kind == .error ? "exclamationmark.circle.fill" : "checkmark.circle.fill"
-                )
-                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                .foregroundStyle(feedback.kind == .error ? Color.red : Color.green)
-                .padding(.horizontal, 20)
-                .padding(.top, 18)
+                    if let feedback = appearance.feedback {
+                        Label(
+                            feedback.message,
+                            systemImage: feedback.kind == .error ? "exclamationmark.circle.fill" : "checkmark.circle.fill"
+                        )
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundStyle(feedback.kind == .error ? Color.red : Color.green)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 18)
+                    }
+                }
+                .padding(.bottom, 24)
             }
+            .scrollIndicators(.hidden)
         }
-        .padding(.bottom, 30)
         .background(Color(.systemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
         .overlay {
@@ -700,6 +712,17 @@ struct MorphSelectionView: View {
             return URL(string: path, relativeTo: ClientConfiguration.backendAPIURL)?.absoluteURL
         }
         gameModel.updateMorphPreview(source: source, packURLs: urls)
+    }
+
+    private func prepareMorphPreview() {
+        if !didPrepareInitialSelection, let preset = appearance.presets.first {
+            didPrepareInitialSelection = true
+            if appearance.selectedBase == nil, appearance.draftPresetId == nil {
+                model.chooseMorphPreset(preset.id)
+                return
+            }
+        }
+        syncPreviewAppearance()
     }
 }
 

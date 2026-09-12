@@ -50,9 +50,11 @@ struct RustGameSurface: UIViewRepresentable {
         private var uploadedMorphPackCount = 0
         private var lastViewportDescription = ""
         private var lastDrawableSize = CGSize.zero
+        private var avatarPreviewMode = false
 
         func update(_ surface: RustGameSurface, view: InteractiveGameView) {
             engine = surface.engine
+            avatarPreviewMode = surface.avatarPreviewMode
             view.isPaused = !surface.isActive
             view.onViewportChange = { [weak self] size, scale, safeArea in
                 let description = "\(Int(size.width))x\(Int(size.height)) @\(scale), safe=\(Int(safeArea.top))/\(Int(safeArea.right))/\(Int(safeArea.bottom))/\(Int(safeArea.left))"
@@ -75,7 +77,7 @@ struct RustGameSurface: UIViewRepresentable {
                 self?.resizeRenderer(to: size, view: view)
             }
             view.onPointer = { [weak self] pointerID, phase, point in
-                guard let engine = self?.engine else { return false }
+                guard let self, !self.avatarPreviewMode, let engine = self.engine else { return false }
                 return engine.uiPointer(
                     pointerID: pointerID,
                     phase: phase,
@@ -133,6 +135,9 @@ struct RustGameSurface: UIViewRepresentable {
                 Float(size.width),
                 Float(size.height)
             )
+            if let renderer, let engine {
+                engine.setAvatarPreviewMode(avatarPreviewMode, renderer: renderer)
+            }
             lastDrawableSize = size
         }
 

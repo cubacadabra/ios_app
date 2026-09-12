@@ -71,6 +71,9 @@ final class GameViewModel: ObservableObject {
     private var previewForward: Float = 0
     private var previewJumpQueued = false
     private var previewLookX: Float = 0
+    private var previewGestureLookX: Float = 0
+    private var previewGestureLookY: Float = 0
+    private var previewZoomDelta: Float = 0
     private var previewActionUntil: Date = .distantPast
     private var previewAppearanceRevision: UInt32 = 0
     var noticeTask: Task<Void, Never>?
@@ -235,9 +238,14 @@ final class GameViewModel: ObservableObject {
             sprint: false,
             jump: active && previewJumpQueued,
             climb: false,
-            lookX: active ? previewLookX : 0
+            lookX: (active ? previewLookX : 0) + previewGestureLookX,
+            lookY: previewGestureLookY,
+            zoomDelta: previewZoomDelta
         )
         previewJumpQueued = false
+        previewGestureLookX = 0
+        previewGestureLookY = 0
+        previewZoomDelta = 0
         engine.step(delta)
     }
 
@@ -246,6 +254,15 @@ final class GameViewModel: ObservableObject {
         previewJumpQueued = action == "jump"
         previewLookX = action == "turn" ? 6 : 0
         previewActionUntil = Date().addingTimeInterval(morphPreviewActionDuration)
+    }
+
+    func morphPreviewLookChanged(to translation: CGSize) {
+        previewGestureLookX += Float(translation.width)
+        previewGestureLookY += Float(translation.height)
+    }
+
+    func morphPreviewZoomChangedBy(delta: CGFloat) {
+        previewZoomDelta -= Float(delta * 20)
     }
 
     func setMorphPreviewAppearance(_ source: String?) {
