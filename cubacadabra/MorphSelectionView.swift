@@ -19,17 +19,33 @@ private struct MorphAssetGroup: Identifiable {
     let assets: [AppRuntimeMorphAsset]
 }
 
+private struct MorphEditorCategory: Identifiable {
+    let id: String
+    let title: String
+    let icon: String
+    let kind: String?
+}
+
+private struct MorphAssetOption: Identifiable {
+    let id: String
+    let asset: AppRuntimeMorphAsset?
+}
+
 struct MorphSelectionView: View {
     @ObservedObject var model: AppViewModel
     @ObservedObject var gameModel: GameViewModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var tab = 0
     @State private var selectedKind: String?
     @State private var appeared = false
     @State private var didPrepareInitialSelection = false
     @State private var canvasInteractionActive = false
+    @State private var categoryPage = 0
+    @State private var starterPage = 0
+    @State private var assetPage = 0
     private let previewClock = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
 
     private var appearance: AppRuntimeAppearanceSnapshot { model.appearanceSnapshot }
@@ -54,6 +70,22 @@ struct MorphSelectionView: View {
     private var activeGroup: MorphAssetGroup? {
         assetGroups.first { $0.id == selectedKind } ?? assetGroups.first
     }
+
+    private var editorCategories: [MorphEditorCategory] {
+        [MorphEditorCategory(id: "starters", title: "Starters", icon: "person.3.fill", kind: nil)]
+            + assetGroups.map {
+                MorphEditorCategory(
+                    id: $0.id,
+                    title: categoryName($0.id),
+                    icon: categoryIcon($0.id),
+                    kind: $0.id
+                )
+            }
+    }
+
+    private var categoryItemsPerPage: Int { horizontalSizeClass == .regular ? 8 : 4 }
+    private var starterItemsPerPage: Int { horizontalSizeClass == .regular ? 4 : 2 }
+    private var assetItemsPerPage: Int { horizontalSizeClass == .regular ? 5 : 2 }
 
     private var stageTextColor: Color {
         colorScheme == .dark ? .white : Color(red: 0.08, green: 0.10, blue: 0.17)
@@ -238,7 +270,7 @@ struct MorphSelectionView: View {
                 }
                 Spacer()
                 HStack(alignment: .bottom) {
-                    Text("Left: move · Right: orbit")
+                    Text("Left: move · Right: orbit · Pinch: zoom")
                         .font(.system(size: 10, weight: .semibold, design: .rounded))
                         .foregroundStyle(.white.opacity(0.72))
                         .lineLimit(1)
@@ -352,31 +384,47 @@ struct MorphSelectionView: View {
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.20 : 0.10), radius: 22, y: -2)
         .offset(y: appeared || reduceMotion ? 0 : 18)
         .opacity(appeared || reduceMotion ? 1 : 0)
-        .scrollDisabled(canvasInteractionActive)
+        .allowsHitTesting(!canvasInteractionActive)
     }
 
     private var categoryStrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                categoryButton(title: "Starters", icon: "person.3.fill", selected: tab == 0) {
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.20)) { tab = 0 }
-                }
+        let page = clampedPage(categoryPage, itemCount: editorCategories.count, pageSize: categoryItemsPerPage)
+        let categories = pageSlice(editorCategories, page: page, pageSize: categoryItemsPerPage)
+        return HStack(spacing: 4) {
+            pagerButton(
+                icon: "chevron.left",
+                label: "Previous categories",
+                enabled: page > 0
+            ) { categoryPage = page - 1 }
 
-                ForEach(assetGroups) { group in
+            HStack(spacing: 8) {
+                ForEach(categories) { category in
                     categoryButton(
-                        title: categoryName(group.id),
-                        icon: categoryIcon(group.id),
-                        selected: tab == 1 && activeGroup?.id == group.id
+                        title: category.title,
+                        icon: category.icon,
+                        selected: category.kind == nil ? tab == 0 : tab == 1 && activeGroup?.id == category.kind
                     ) {
                         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.20)) {
-                            tab = 1
-                            selectedKind = group.id
+                            if let kind = category.kind {
+                                tab = 1
+                                selectedKind = kind
+                                assetPage = 0
+                            } else {
+                                tab = 0
+                            }
                         }
                     }
                 }
             }
-            .padding(.horizontal, 20)
+
+            pagerButton(
+                icon: "chevron.right",
+                label: "Next categories",
+                enabled: page + 1 < pageCount(itemCount: editorCategories.count, pageSize: categoryItemsPerPage)
+            ) { categoryPage = page + 1 }
         }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 8)
     }
 
     private func categoryButton(title: String, icon: String, selected: Bool, action: @escaping () -> Void) -> some View {
@@ -392,7 +440,8 @@ struct MorphSelectionView: View {
                     .foregroundStyle(selected ? morphAccent : Color.secondary)
                     .lineLimit(1)
             }
-            .frame(minWidth: 64, minHeight: 70)
+            .frame(width: 64)
+            .frame(minHeight: 70)
         }
         .buttonStyle(.plain)
         .animation(.easeOut(duration: 0.18), value: selected)
@@ -409,15 +458,31 @@ struct MorphSelectionView: View {
                     .padding(.horizontal, 20)
                     .frame(minHeight: 120)
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
+                let indexedPresets = Array(appearance.presets.enumerated())
+                let page = clampedPage(starterPage, itemCount: indexedPresets.count, pageSize: starterItemsPerPage)
+                let presets = pageSlice(indexedPresets, page: page, pageSize: starterItemsPerPage)
+                HStack(alignment: .center, spacing: 4) {
+                    pagerButton(
+                        icon: "chevron.left",
+                        label: "Previous starters",
+                        enabled: page > 0
+                    ) { starterPage = page - 1 }
+
                     HStack(alignment: .top, spacing: 12) {
-                        ForEach(Array(appearance.presets.enumerated()), id: \.element.id) { index, preset in
+                        ForEach(presets, id: \.element.id) { index, preset in
                             starterTile(preset, index: index)
                         }
                     }
-                    .padding(.horizontal, 20)
                     .padding(.vertical, 2)
+
+                    pagerButton(
+                        icon: "chevron.right",
+                        label: "Next starters",
+                        enabled: page + 1 < pageCount(itemCount: indexedPresets.count, pageSize: starterItemsPerPage)
+                    ) { starterPage = page + 1 }
                 }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 8)
             }
         }
     }
@@ -493,16 +558,36 @@ struct MorphSelectionView: View {
             VStack(alignment: .leading, spacing: 14) {
                 sectionHeader(title: categoryName(group.id), detail: "Choose the look that feels right.")
 
-                ScrollView(.horizontal, showsIndicators: false) {
+                let options = [MorphAssetOption(id: "none", asset: nil)]
+                    + group.assets.map { MorphAssetOption(id: $0.id, asset: $0) }
+                let page = clampedPage(assetPage, itemCount: options.count, pageSize: assetItemsPerPage)
+                let visibleOptions = pageSlice(options, page: page, pageSize: assetItemsPerPage)
+                HStack(alignment: .center, spacing: 4) {
+                    pagerButton(
+                        icon: "chevron.left",
+                        label: "Previous \(categoryName(group.id)) options",
+                        enabled: page > 0
+                    ) { assetPage = page - 1 }
+
                     HStack(alignment: .top, spacing: 12) {
-                        noneTile(for: group)
-                        ForEach(group.assets) { asset in
-                            assetTile(asset, kind: group.id)
+                        ForEach(visibleOptions) { option in
+                            if let asset = option.asset {
+                                assetTile(asset, kind: group.id)
+                            } else {
+                                noneTile(for: group)
+                            }
                         }
                     }
-                    .padding(.horizontal, 20)
                     .padding(.vertical, 2)
+
+                    pagerButton(
+                        icon: "chevron.right",
+                        label: "Next \(categoryName(group.id)) options",
+                        enabled: page + 1 < pageCount(itemCount: options.count, pageSize: assetItemsPerPage)
+                    ) { assetPage = page + 1 }
                 }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 8)
             }
         } else {
             Text("Customization options are unavailable right now.")
@@ -614,6 +699,35 @@ struct MorphSelectionView: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 20)
+    }
+
+    private func pagerButton(icon: String, label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(enabled ? Color.primary.opacity(0.78) : Color.secondary.opacity(0.28))
+                .frame(width: 36, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(MorphPressButtonStyle())
+        .disabled(!enabled)
+        .accessibilityLabel(label)
+    }
+
+    private func pageCount(itemCount: Int, pageSize: Int) -> Int {
+        max((itemCount + pageSize - 1) / pageSize, 1)
+    }
+
+    private func clampedPage(_ page: Int, itemCount: Int, pageSize: Int) -> Int {
+        min(max(page, 0), pageCount(itemCount: itemCount, pageSize: pageSize) - 1)
+    }
+
+    private func pageSlice<Element>(_ items: [Element], page: Int, pageSize: Int) -> [Element] {
+        guard !items.isEmpty else { return [] }
+        let safePage = clampedPage(page, itemCount: items.count, pageSize: pageSize)
+        let start = safePage * pageSize
+        let end = min(start + pageSize, items.count)
+        return Array(items[start..<end])
     }
 
     private var saveArea: some View {

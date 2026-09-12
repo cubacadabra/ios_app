@@ -215,8 +215,46 @@ final class InteractiveGameView: MTKView {
     private var cameraTouches: [UInt64: CGPoint] = [:]
     private var cameraTouchStarts: [UInt64: CGPoint] = [:]
     private var cameraTouchMoved = false
-    private var previousPinchDistance: CGFloat?
-    private var previousPinchIDs: [UInt64] = []
+    private var pinchActive = false
+    private var previousPinchScale: CGFloat = 1
+
+    override init(frame frameRect: CGRect, device: MTLDevice?) {
+        super.init(frame: frameRect, device: device)
+        installPinchRecognizer()
+    }
+
+    required init(coder: NSCoder) {
+        super.init(coder: coder)
+        installPinchRecognizer()
+    }
+
+    private func installPinchRecognizer() {
+        let recognizer = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
+        recognizer.cancelsTouchesInView = true
+        recognizer.delaysTouchesBegan = false
+        addGestureRecognizer(recognizer)
+    }
+
+    @objc private func handlePinch(_ recognizer: UIPinchGestureRecognizer) {
+        switch recognizer.state {
+        case .began:
+            pinchActive = true
+            previousPinchScale = recognizer.scale
+            onMoveEnded?()
+            onInteractionChanged?(true)
+        case .changed:
+            guard previousPinchScale > 0, recognizer.scale > 0 else { return }
+            onZoomDelta?(log(recognizer.scale / previousPinchScale))
+            previousPinchScale = recognizer.scale
+        case .ended, .cancelled, .failed:
+            pinchActive = false
+            previousPinchScale = 1
+            onZoomEnded?()
+            if cameraTouches.isEmpty { onInteractionChanged?(false) }
+        default:
+            break
+        }
+    }
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -253,7 +291,6 @@ final class InteractiveGameView: MTKView {
             }
         }
         if !cameraTouches.isEmpty { onInteractionChanged?(true) }
-        updatePinchDistance()
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -276,7 +313,6 @@ final class InteractiveGameView: MTKView {
                 cameraTouches[pointerID] = point
             }
         }
-        updatePinchDistance()
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -302,7 +338,7 @@ final class InteractiveGameView: MTKView {
             pointerIDs.removeValue(forKey: ObjectIdentifier(touch))
         }
         if cameraTouches.isEmpty {
-            onInteractionChanged?(false)
+            if !pinchActive { onInteractionChanged?(false) }
             onLookEnded?()
             if phase == UInt8(CUBACADABRA_UI_POINTER_UP)
                 && wasCameraInteraction
@@ -317,7 +353,6 @@ final class InteractiveGameView: MTKView {
                 cameraTouchStarts[pointerID] = point
             }
         }
-        updatePinchDistance()
     }
 
     private func pointerID(for touch: UITouch) -> UInt64 {
@@ -329,25 +364,4 @@ final class InteractiveGameView: MTKView {
         return pointerID
     }
 
-    private func updatePinchDistance() {
-        guard cameraTouches.count >= 2 else {
-            if previousPinchDistance != nil { onZoomEnded?() }
-            previousPinchDistance = nil
-            previousPinchIDs = []
-            return
-        }
-        let pinchIDs = Array(cameraTouches.keys.sorted().prefix(2))
-        if pinchIDs != previousPinchIDs {
-            previousPinchDistance = nil
-            previousPinchIDs = pinchIDs
-        }
-        let points = pinchIDs.compactMap { cameraTouches[$0] }
-        let distance = hypot(points[0].x - points[1].x, points[0].y - points[1].y)
-        if let previousPinchDistance, previousPinchDistance > 10, distance > 10 {
-            // Ratios feel the same at any finger spacing or display scale.
-            onZoomDelta?(log(distance / previousPinchDistance))
-            cameraTouchMoved = true
-        }
-        previousPinchDistance = distance
-    }
 }
