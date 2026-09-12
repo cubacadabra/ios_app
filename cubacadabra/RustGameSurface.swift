@@ -15,6 +15,7 @@ struct RustGameSurface: UIViewRepresentable {
     var onLookEnded: () -> Void = {}
     var onZoomDelta: (CGFloat) -> Void = { _ in }
     var onZoomEnded: () -> Void = {}
+    var onInteractionChanged: (Bool) -> Void = { _ in }
     var onWorldTap: () -> Void = {}
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -94,6 +95,7 @@ struct RustGameSurface: UIViewRepresentable {
             view.onLookEnded = surface.onLookEnded
             view.onZoomDelta = surface.onZoomDelta
             view.onZoomEnded = surface.onZoomEnded
+            view.onInteractionChanged = surface.onInteractionChanged
             view.onWorldTap = surface.onWorldTap
             view.onViewportChange?(view.bounds.size, view.contentScaleFactor, view.safeAreaInsets)
             resizeRenderer(to: view.drawableSize, view: view)
@@ -204,6 +206,7 @@ final class InteractiveGameView: MTKView {
     var onLookEnded: (() -> Void)?
     var onZoomDelta: ((CGFloat) -> Void)?
     var onZoomEnded: (() -> Void)?
+    var onInteractionChanged: ((Bool) -> Void)?
     var onWorldTap: (() -> Void)?
 
     private var nextPointerID: UInt64 = 1
@@ -249,6 +252,7 @@ final class InteractiveGameView: MTKView {
                 }
             }
         }
+        if !cameraTouches.isEmpty { onInteractionChanged?(true) }
         updatePinchDistance()
     }
 
@@ -298,6 +302,7 @@ final class InteractiveGameView: MTKView {
             pointerIDs.removeValue(forKey: ObjectIdentifier(touch))
         }
         if cameraTouches.isEmpty {
+            onInteractionChanged?(false)
             onLookEnded?()
             if phase == UInt8(CUBACADABRA_UI_POINTER_UP)
                 && wasCameraInteraction

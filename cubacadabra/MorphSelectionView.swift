@@ -29,6 +29,7 @@ struct MorphSelectionView: View {
     @State private var selectedKind: String?
     @State private var appeared = false
     @State private var didPrepareInitialSelection = false
+    @State private var canvasInteractionActive = false
     private let previewClock = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
 
     private var appearance: AppRuntimeAppearanceSnapshot { model.appearanceSnapshot }
@@ -203,7 +204,8 @@ struct MorphSelectionView: View {
                     onMoveChanged: { gameModel.morphPreviewMoveChanged(to: $0) },
                     onMoveEnded: { gameModel.morphPreviewMoveEnded() },
                     onLookChanged: { gameModel.morphPreviewLookChanged(to: $0) },
-                    onZoomDelta: { gameModel.morphPreviewZoomChangedBy(delta: $0) }
+                    onZoomDelta: { gameModel.morphPreviewZoomChangedBy(delta: $0) },
+                    onInteractionChanged: { canvasInteractionActive = $0 }
                 )
                     .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
                     .transition(.opacity)
@@ -350,6 +352,7 @@ struct MorphSelectionView: View {
         .shadow(color: .black.opacity(colorScheme == .dark ? 0.20 : 0.10), radius: 22, y: -2)
         .offset(y: appeared || reduceMotion ? 0 : 18)
         .opacity(appeared || reduceMotion ? 1 : 0)
+        .scrollDisabled(canvasInteractionActive)
     }
 
     private var categoryStrip: some View {
@@ -716,8 +719,9 @@ struct MorphSelectionView: View {
     private func prepareMorphPreview() {
         if !didPrepareInitialSelection, let preset = appearance.presets.first {
             didPrepareInitialSelection = true
-            if appearance.selectedBase == nil, appearance.draftPresetId == nil {
-                model.chooseMorphPreset(preset.id)
+            if appearance.draftPresetId == nil || appearance.draftRenderJson == nil {
+                let fallback = appearance.presets.first { $0.id == appearance.draftPresetId } ?? preset
+                model.chooseMorphPreset(fallback.id)
                 return
             }
         }
