@@ -60,14 +60,7 @@ extension AppViewModel {
     }
 
     func appearanceWireJSON() -> String? {
-        let appearance = appSnapshot.appearance
-        if let source = appearance.selectedRenderJson { return source }
-        guard let base = appearance.selectedBase else { return nil }
-        var value: [String: Any] = ["version": 2, "base": base, "parts": appearance.selectedParts,
-            "parameters": [:], "revision": 0]
-        if let face = appearance.selectedFace { value["face"] = face }
-        guard JSONSerialization.isValidJSONObject(value), let data = try? JSONSerialization.data(withJSONObject: value) else { return nil }
-        return String(data: data, encoding: .utf8)
+        appSnapshot.appearance.selectedLoadoutJson
     }
 
     private func dispatchApp(_ action: [String: Any]) {

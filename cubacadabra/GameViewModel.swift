@@ -290,17 +290,17 @@ final class GameViewModel: ObservableObject {
         previewZoomDelta -= Float(delta * 20)
     }
 
-    func setMorphPreviewAppearance(_ source: String?) {
+    func setMorphPreviewLoadout(_ source: String?) {
         guard let source,
               var value = (try? JSONSerialization.jsonObject(with: Data(source.utf8))) as? [String: Any],
-              value["base"] != nil || value["body"] != nil else { return }
+              value["base"] != nil else { return }
         previewAppearanceRevision = max(previewAppearanceRevision, morphPreviewEngine?.appearanceRevision ?? 0) &+ 1
         value["revision"] = previewAppearanceRevision
         guard JSONSerialization.isValidJSONObject(value),
               let data = try? JSONSerialization.data(withJSONObject: value),
               let normalized = String(data: data, encoding: .utf8) else { return }
         guard let preview = morphPreviewEngine else { return }
-        let status = preview.setLocalAppearance(normalized)
+        let status = preview.setLocalMorphLoadout(normalized)
         if status == 0 || status == 2 {
             gameLog.error("Morph preview rejected appearance revision \(self.previewAppearanceRevision, privacy: .public) with status \(status, privacy: .public)")
         }
@@ -343,7 +343,7 @@ final class GameViewModel: ObservableObject {
                 newPacks.forEach { self.morphPreviewPackData[$0.key] = $0.value }
                 if let preview = self.morphPreviewEngine {
                     newPacks.values.forEach(preview.appendMorphPack)
-                    self.setMorphPreviewAppearance(source)
+                    self.setMorphPreviewLoadout(source)
                 } else {
                     let preview = try EngineBridge(manifest: morphPreviewManifest, script: morphPreviewScript)
                     preview.setAuthenticated(self.accountSession.accountID != nil)
@@ -351,7 +351,7 @@ final class GameViewModel: ObservableObject {
                     self.previewLastTick = nil
                     self.previewInitialZoomPending = true
                     self.morphPreviewEngine = preview
-                    self.setMorphPreviewAppearance(source)
+                    self.setMorphPreviewLoadout(source)
                 }
             } catch {
                 gameLog.error("Morph preview load failed: \(error.localizedDescription, privacy: .public)")

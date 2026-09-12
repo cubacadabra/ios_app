@@ -1,4 +1,5 @@
 import Combine
+import OSLog
 import SwiftUI
 
 private let morphAccent = Color(red: 0.36, green: 0.37, blue: 0.98)
@@ -10,7 +11,7 @@ private struct MorphPreviewSelection: Equatable {
     let base: String?
     let parts: [String]
     let face: String?
-    let renderJSON: String?
+    let loadoutJSON: String?
     let assets: [AppRuntimeMorphAsset]
     let presets: [AppRuntimeMorphPreset]
 }
@@ -42,7 +43,6 @@ struct MorphSelectionView: View {
     @State private var tab = 0
     @State private var selectedKind: String?
     @State private var appeared = false
-    @State private var didPrepareInitialSelection = false
     @State private var canvasInteractionActive = false
     @State private var categoryPage = 0
     @State private var starterPage = 0
@@ -57,7 +57,7 @@ struct MorphSelectionView: View {
             base: appearance.draftBase,
             parts: appearance.draftParts,
             face: appearance.draftFace,
-            renderJSON: appearance.draftRenderJson,
+            loadoutJSON: appearance.draftLoadoutJson,
             assets: appearance.assets,
             presets: appearance.presets
         )
@@ -125,7 +125,7 @@ struct MorphSelectionView: View {
         .onAppear {
             model.loadAppearanceCatalog()
             model.beginMorphEdit()
-            prepareMorphPreview()
+            syncPreviewAppearance()
             guard !appeared else { return }
             if reduceMotion {
                 appeared = true
@@ -133,7 +133,7 @@ struct MorphSelectionView: View {
                 withAnimation(.easeOut(duration: 0.38)) { appeared = true }
             }
         }
-        .onChange(of: previewSelection) { _ in prepareMorphPreview() }
+        .onChange(of: previewSelection) { _ in syncPreviewAppearance() }
         .onReceive(previewClock) { date in gameModel.tickMorphPreview(at: date) }
     }
 
@@ -827,11 +827,21 @@ struct MorphSelectionView: View {
 
     private func syncPreviewAppearance() {
         guard let base = appearance.draftBase,
-              let source = appearance.draftRenderJson else { return }
+              let source = appearance.draftLoadoutJson else { return }
         let ids = [base] + appearance.draftParts + (appearance.draftFace.map { [$0] } ?? [])
-        let urls: [URL] = appearance.assets.compactMap { asset in
-            guard ids.contains(asset.id), let path = asset.artifactURL else { return nil }
-            return URL(string: path, relativeTo: ClientConfiguration.backendAPIURL)?.absoluteURL
+        var urls: [URL] = []
+        for id in ids {
+            guard let asset = appearance.assets.first(where: { $0.id == id }) else {
+                gameLog.error("Morph preview catalog is missing asset \(id, privacy: .public)")
+                return
+            }
+            if asset.kind == "face" { continue }
+            guard let path = asset.artifactURL,
+                  let url = URL(string: path, relativeTo: ClientConfiguration.backendAPIURL)?.absoluteURL else {
+                gameLog.error("Morph asset \(id, privacy: .public) has no schema-5 artifact")
+                return
+            }
+            urls.append(url)
         }
         gameModel.updateMorphPreview(
             source: source,
@@ -840,17 +850,6 @@ struct MorphSelectionView: View {
         )
     }
 
-    private func prepareMorphPreview() {
-        if !didPrepareInitialSelection, let preset = appearance.presets.first {
-            didPrepareInitialSelection = true
-            if appearance.draftPresetId == nil || appearance.draftRenderJson == nil {
-                let fallback = appearance.presets.first { $0.id == appearance.draftPresetId } ?? preset
-                model.chooseMorphPreset(fallback.id)
-                return
-            }
-        }
-        syncPreviewAppearance()
-    }
 }
 
 private struct MorphPressButtonStyle: ButtonStyle {

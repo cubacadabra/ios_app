@@ -113,8 +113,8 @@ struct AppRuntimeAppearanceSnapshot: Decodable, Equatable {
     let draftParts: [String]
     let draftFace: String?
     let draftPresetId: String?
-    let selectedRenderJson: String?
-    let draftRenderJson: String?
+    let selectedLoadoutJson: String?
+    let draftLoadoutJson: String?
     let draftCanSave: Bool
     let isLoading: Bool
     let isSaving: Bool

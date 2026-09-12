@@ -144,6 +144,15 @@ final class EngineBridge {
         return status
     }
 
+    @discardableResult
+    func setLocalMorphLoadout(_ source: String) -> UInt8 {
+        let bytes = Array(source.utf8)
+        return bytes.withUnsafeBytes { rawBuffer in
+            let pointer = rawBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self)
+            return engine_set_local_morph_loadout_json(handle, pointer, UInt(bytes.count))
+        }
+    }
+
     func resetView() {
         engine_reset_view(handle)
     }
