@@ -239,11 +239,6 @@ final class GameViewModel: ObservableObject {
         let forward = min(max((active ? previewForward : 0) + previewMoveForward, -1), 1)
         let initialZoom: Float = previewInitialZoomPending ? -6.5 : 0
         let zoomInput = previewZoomDelta + initialZoom
-        #if DEBUG
-        if abs(zoomInput) > 0.0001 || abs(previewGestureLookX) > 0.0001 || abs(previewGestureLookY) > 0.0001 {
-            NSLog("[MorphPreview] setInput look=(\(previewGestureLookX),\(previewGestureLookY)) zoomDelta=\(zoomInput) move=(\(previewMoveStrafe),\(previewMoveForward))")
-        }
-        #endif
         engine.setInput(
             forward: forward,
             strafe: previewMoveStrafe,
@@ -260,12 +255,6 @@ final class GameViewModel: ObservableObject {
         previewGestureLookY = 0
         previewZoomDelta = 0
         engine.step(delta)
-        #if DEBUG
-        if abs(zoomInput) > 0.0001 {
-            let camera = engine.frame().camera
-            NSLog("[MorphPreview] camera after step=(\(camera.x),\(camera.y),\(camera.z)) appliedZoom=\(zoomInput)")
-        }
-        #endif
     }
 
     func playMorphPreview(_ action: String) {
@@ -276,17 +265,11 @@ final class GameViewModel: ObservableObject {
     }
 
     func morphPreviewLookChanged(to translation: CGSize) {
-        #if DEBUG
-        NSLog("[MorphPreview] look changed translation=(\(translation.width),\(translation.height))")
-        #endif
         previewGestureLookX += Float(translation.width)
         previewGestureLookY += Float(translation.height)
     }
 
     func morphPreviewLookEnded() {
-        #if DEBUG
-        NSLog("[MorphPreview] look ended accumulated=(\(previewGestureLookX),\(previewGestureLookY))")
-        #endif
         previewGestureLookX = 0
         previewGestureLookY = 0
     }
@@ -305,9 +288,6 @@ final class GameViewModel: ObservableObject {
     func morphPreviewZoomChangedBy(delta: CGFloat) {
         guard delta.isFinite else { return }
         previewZoomDelta -= Float(delta * 20)
-        #if DEBUG
-        NSLog("[MorphPreview] zoom changed rawDelta=\(delta) accumulatedZoom=\(previewZoomDelta)")
-        #endif
     }
 
     func setMorphPreviewAppearance(_ source: String?) {

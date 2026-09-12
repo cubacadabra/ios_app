@@ -89,17 +89,11 @@ struct RustGameSurface: UIViewRepresentable {
                 )
             }
             view.usesSplitPreviewControls = surface.avatarPreviewMode
-            #if DEBUG
-            NSLog("[MorphGesture] coordinator configured mode=\(surface.avatarPreviewMode ? "preview" : "game") multipleTouch=\(view.isMultipleTouchEnabled) userInteraction=\(view.isUserInteractionEnabled)")
-            #endif
             view.onMoveChanged = surface.onMoveChanged
             view.onMoveEnded = surface.onMoveEnded
             view.onLookChanged = surface.onLookChanged
             view.onLookEnded = surface.onLookEnded
             view.onZoomDelta = { delta in
-                #if DEBUG
-                NSLog("[MorphGesture] zoom callback reached RustGameSurface delta=\(delta)")
-                #endif
                 surface.onZoomDelta(delta)
             }
             view.onZoomEnded = surface.onZoomEnded
@@ -252,25 +246,9 @@ final class InteractiveGameView: MTKView {
         recognizer.delaysTouchesBegan = false
         recognizer.delaysTouchesEnded = false
         addGestureRecognizer(recognizer)
-        #if DEBUG
-        NSLog("[MorphGesture] installed pinch recognizer")
-        #endif
     }
 
     @objc private func handlePinch(_ recognizer: UIPinchGestureRecognizer) {
-        #if DEBUG
-        let stateName: String
-        switch recognizer.state {
-        case .possible: stateName = "possible"
-        case .began: stateName = "began"
-        case .changed: stateName = "changed"
-        case .ended: stateName = "ended"
-        case .cancelled: stateName = "cancelled"
-        case .failed: stateName = "failed"
-        @unknown default: stateName = "unknown"
-        }
-        NSLog("[MorphGesture] pinch state=\(stateName) scale=\(recognizer.scale) touches=\(cameraTouches.count) suppress=\(suppressSingleFingerInput) active=\(pinchActive)")
-        #endif
         switch recognizer.state {
         case .began:
             pinchActive = true
@@ -300,9 +278,6 @@ final class InteractiveGameView: MTKView {
     private func applyPinchScale(_ scale: CGFloat) {
         guard scale.isFinite, scale > 0 else { return }
         let delta = log(scale / previousPinchScale)
-        #if DEBUG
-        NSLog("[MorphGesture] pinch zoom delta=\(delta) scale=\(scale) previous=\(previousPinchScale)")
-        #endif
         onZoomDelta?(delta)
         previousPinchScale = scale
     }
@@ -340,23 +315,9 @@ final class InteractiveGameView: MTKView {
                     onMoveEnded?()
                     onLookEnded?()
                     cameraTouchMoved = true
-                    #if DEBUG
-                    NSLog("[MorphGesture] second camera touch latched; suppressing single-finger input cameraTouches=\(cameraTouches.count)")
-                    #endif
                 }
             }
         }
-        #if DEBUG
-        NSLog("[MorphGesture] touches began count=\(touches.count) eventAll=\(event?.allTouches?.count ?? -1) camera=\(cameraTouches.count) ui=\(uiPointers.count) suppress=\(suppressSingleFingerInput)")
-        if let allTouches = event?.allTouches {
-            let details = allTouches.map { touch in
-                let viewName = touch.view.map { String(describing: type(of: $0)) } ?? "nil"
-                let point = touch.location(in: self)
-                return "\(viewName)@(\(point.x),\(point.y))"
-            }.joined(separator: ",")
-            NSLog("[MorphGesture] event touch views=\(details)")
-        }
-        #endif
         updateExternalPreviewPinch(with: event)
         if !cameraTouches.isEmpty { onInteractionChanged?(true) }
     }
@@ -377,21 +338,11 @@ final class InteractiveGameView: MTKView {
                     if usesSplitPreviewControls,
                        let start = cameraTouchStarts[pointerID],
                        start.x < bounds.midX {
-                        #if DEBUG
-                        NSLog("[MorphGesture] raw single-finger MOVE translation=(\(point.x - start.x),\(point.y - start.y))")
-                        #endif
                         onMoveChanged?(CGSize(width: point.x - start.x, height: point.y - start.y))
                     } else {
-                        #if DEBUG
-                        NSLog("[MorphGesture] raw single-finger LOOK translation=(\(point.x - previous.x),\(point.y - previous.y))")
-                        #endif
                         onLookChanged?(CGSize(width: point.x - previous.x, height: point.y - previous.y))
                     }
                     cameraTouchMoved = true
-                } else if cameraTouches.count >= 1 {
-                    #if DEBUG
-                    NSLog("[MorphGesture] raw move suppressed cameraTouches=\(cameraTouches.count) pinchActive=\(pinchActive) suppress=\(suppressSingleFingerInput)")
-                    #endif
                 }
                 cameraTouches[pointerID] = point
             }
@@ -408,9 +359,6 @@ final class InteractiveGameView: MTKView {
 
     private func finish(_ touches: Set<UITouch>, phase: UInt8, event: UIEvent?) {
         let wasCameraInteraction = !cameraTouches.isEmpty
-        #if DEBUG
-        NSLog("[MorphGesture] touches finish phase=\(phase) ending=\(touches.count) cameraBefore=\(cameraTouches.count) pinchActive=\(pinchActive) suppress=\(suppressSingleFingerInput)")
-        #endif
         onMoveEnded?()
         for touch in touches {
             let pointerID = pointerID(for: touch)
@@ -445,9 +393,6 @@ final class InteractiveGameView: MTKView {
             }
             cameraTouchMoved = false
         }
-        #if DEBUG
-        NSLog("[MorphGesture] touches finished cameraAfter=\(cameraTouches.count) ui=\(uiPointers.count) pinchActive=\(pinchActive) suppress=\(suppressSingleFingerInput)")
-        #endif
     }
 
     private func updateExternalPreviewPinch(with event: UIEvent?) {
@@ -475,9 +420,6 @@ final class InteractiveGameView: MTKView {
             onMoveEnded?()
             onLookEnded?()
             onInteractionChanged?(true)
-            #if DEBUG
-            NSLog("[MorphGesture] external preview pinch began distance=\(distance) activeTouches=\(activeTouches.count)")
-            #endif
             return
         }
 
@@ -485,9 +427,6 @@ final class InteractiveGameView: MTKView {
         guard delta.isFinite else { return }
         previousExternalPinchDistance = distance
         onZoomDelta?(delta)
-        #if DEBUG
-        NSLog("[MorphGesture] external preview pinch changed distance=\(distance) delta=\(delta)")
-        #endif
     }
 
     private func endExternalPreviewPinch() {
@@ -505,9 +444,6 @@ final class InteractiveGameView: MTKView {
                 cameraTouchStarts[pointerID] = point
             }
         }
-        #if DEBUG
-        NSLog("[MorphGesture] external preview pinch ended remainingCameraTouches=\(cameraTouches.count)")
-        #endif
     }
 
     private func pointerID(for touch: UITouch) -> UInt64 {
