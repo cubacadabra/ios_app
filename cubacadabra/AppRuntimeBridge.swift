@@ -84,7 +84,9 @@ struct AppRuntimeMorphAsset: Decodable, Equatable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case id, kind, displayName, thumbnail
-        case artifactURL = "artifact_url"
+        // JSONDecoder converts `artifact_url` to `artifactUrl` before it
+        // compares custom coding keys.
+        case artifactURL = "artifactUrl"
     }
 
     var identity: String { id }

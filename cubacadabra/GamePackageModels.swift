@@ -364,7 +364,10 @@ enum GamePackageError: LocalizedError {
 
 enum ClientConfiguration {
 #if DEBUG
-    private static let defaultBackendURL = "ws://localhost:8787"
+    // Keep the iOS debug client on the same IPv4 loopback endpoint as the
+    // web client. On some hosts `localhost` resolves to ::1 while the local
+    // worker only listens on 127.0.0.1, making the morph catalog unavailable.
+    private static let defaultBackendURL = "ws://127.0.0.1:8787"
     private static let defaultGameBaseURL = "http://localhost:5173/games/first-game/"
     private static let defaultLoginURL = "http://localhost:5173/login/"
 #else

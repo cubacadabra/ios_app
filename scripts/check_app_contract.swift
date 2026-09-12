@@ -106,6 +106,45 @@ struct CheckAppContract {
         ])
         precondition(safetyRuntime.snapshot().safety.blockedUserIDs.isEmpty)
         print("Passed explicit Swift safety schema and rollback checks.")
+
+        let appearanceRuntime = AppRuntimeBridge()
+        appearanceRuntime.dispatch(["type": "load_appearance_catalog"])
+        guard let appearanceEffect = appearanceRuntime.pollEffect() else {
+            preconditionFailure("appearance catalog effect missing")
+        }
+        appearanceRuntime.dispatch([
+            "type": "http_completed",
+            "effect_id": appearanceEffect.effectId,
+            "status": 200,
+            "body": """
+            {
+              "release": "test-v5",
+              "assets": [{
+                "id": "cuba:base/person.v1",
+                "kind": "base",
+                "name": "Person",
+                "artifact": {"url": "/morphs/packs/person.morphpack"},
+                "definition": {
+                  "id": "cuba:base/person.v1",
+                  "kind": "base",
+                  "displayName": "Person",
+                  "fitProfiles": [],
+                  "occupiedSlots": ["base"],
+                  "coverage": ["body"],
+                  "materials": ["skin"],
+                  "lod": {"near": 1, "mid": 1, "far": 1},
+                  "provenance": {"source": "test", "license": "test"}
+                }
+              }],
+              "presets": []
+            }
+            """,
+        ])
+        precondition(
+            appearanceRuntime.snapshot().appearance.assets.first?.artifactURL
+                == "/morphs/packs/person.morphpack"
+        )
+        print("Passed morph artifact URL decoding check.")
     }
 
     static func assertSubset(_ actual: Any, _ expected: Any, label: String) {
