@@ -139,7 +139,7 @@ struct ContentView: View {
         } else if appModel.isUnderThirteen {
             ParentEmailGateView(model: appModel)
         } else {
-            MainMenuView(model: appModel, safetyDestination: SafetyCenterView(appModel: appModel, gameModel: model)) { game in
+            MainMenuView(model: appModel, gameModel: model, safetyDestination: SafetyCenterView(appModel: appModel, gameModel: model)) { game in
                 let sessionID = appModel.gameSession.sessionID
                 try await model.selectGame(game)
                 guard sessionID == appModel.gameSession.sessionID else { return }

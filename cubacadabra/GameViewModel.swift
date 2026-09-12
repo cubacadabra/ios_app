@@ -57,6 +57,11 @@ final class GameViewModel: ObservableObject {
     var lookX: Float = 0
     var lookY: Float = 0
     var zoomDelta: Float = 0
+    private var previewLastTick: Date?
+    private var previewForward: Float = 0
+    private var previewJumpQueued = false
+    private var previewLookX: Float = 0
+    private var previewActionUntil: Date = .distantPast
     var noticeTask: Task<Void, Never>?
     var moderationNoticeTask: Task<Void, Never>?
     var buildActionNoticeTask: Task<Void, Never>?
@@ -202,6 +207,40 @@ final class GameViewModel: ObservableObject {
                 respawnEventID: nextFrame.playerRespawnEventID
             )
         }
+    }
+
+    func tickMorphPreview(at date: Date) {
+        guard let engine, frame != nil, !isLoading else { return }
+        guard let previous = previewLastTick else {
+            previewLastTick = date
+            return
+        }
+        previewLastTick = date
+        let delta = Float(min(max(date.timeIntervalSince(previous), 0), 0.05))
+        let active = date < previewActionUntil
+        engine.setInput(
+            forward: active ? previewForward : 0,
+            strafe: 0,
+            sprint: false,
+            jump: active && previewJumpQueued,
+            climb: false,
+            lookX: active ? previewLookX : 0
+        )
+        previewJumpQueued = false
+        engine.step(delta)
+        frame = engine.frame()
+    }
+
+    func playMorphPreview(_ action: String) {
+        previewForward = action == "walk" ? 1 : 0
+        previewJumpQueued = action == "jump"
+        previewLookX = action == "turn" ? 6 : 0
+        previewActionUntil = Date().addingTimeInterval(0.75)
+    }
+
+    func setMorphPreviewAppearance(_ source: String?) {
+        guard let source else { return }
+        engine?.setLocalAppearance(source)
     }
 
     func setMove(strafe: Float, forward: Float) {

@@ -1,18 +1,13 @@
+import Combine
 import SwiftUI
 
 private let morphCoral = Color(red: 0.91, green: 0.39, blue: 0.29)
 
-struct MorphOption {
-    let label: String
-    static func option(for bodyID: String?) -> MorphOption {
-        MorphOption(label: bodyID == "cuba:person.v1" ? "Person 1" : "Custom morph")
-    }
-}
-
 struct MorphSelectionView: View {
     @ObservedObject var model: AppViewModel
+    @ObservedObject var gameModel: GameViewModel
     @State private var tab = 0
-    @State private var previewAction: String?
+    private let previewClock = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
     private var appearance: AppRuntimeAppearanceSnapshot { model.appearanceSnapshot }
 
     var body: some View {
@@ -28,15 +23,16 @@ struct MorphSelectionView: View {
                         .font(.system(size: 15, weight: .bold, design: .rounded)).tracking(1.1).foregroundStyle(.white).padding(.horizontal, 20).frame(minHeight: 56).background(morphCoral, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
                 }.buttonStyle(.plain).disabled(appearance.isSaving || !appearance.draftCanSave)
             }.frame(maxWidth: 620, alignment: .leading).padding(.horizontal, 24).padding(.top, 24).padding(.bottom, 28)
-        }.navigationTitle("Choose your morph").navigationBarTitleDisplayMode(.inline).background(Color(.systemBackground).ignoresSafeArea()).onAppear { model.beginMorphEdit() }
+        }.navigationTitle("Choose your morph").navigationBarTitleDisplayMode(.inline).background(Color(.systemBackground).ignoresSafeArea()).onAppear { model.beginMorphEdit(); syncPreviewAppearance(); Task { await gameModel.load(); syncPreviewAppearance() } }.onChange(of: appearance.draftBase) { _ in syncPreviewAppearance() }.onChange(of: appearance.draftParts) { _ in syncPreviewAppearance() }.onChange(of: appearance.draftFace) { _ in syncPreviewAppearance() }.onReceive(previewClock) { date in gameModel.tickMorphPreview(at: date) }
     }
 
     private var starterList: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 145), spacing: 10)], spacing: 10) {
             ForEach(appearance.presets) { preset in
+                let isSelected = preset.base == appearance.draftBase && preset.parts.count == appearance.draftParts.count && preset.parts.allSatisfy { appearance.draftParts.contains($0) } && preset.face == appearance.draftFace
                 Button { model.chooseMorphPreset(preset.id) } label: {
                     VStack(alignment: .leading, spacing: 5) { Text(preset.displayName).font(.system(size: 16, weight: .bold, design: .rounded)); Text(preset.parts.isEmpty ? "Base morph" : "Ready to play").font(.caption).foregroundStyle(.secondary) }
-                        .frame(maxWidth: .infinity, minHeight: 70, alignment: .leading).padding(14).background(.secondary.opacity(preset.base == appearance.draftBase ? 0.14 : 0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous)).overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(preset.base == appearance.draftBase ? morphCoral : .clear, lineWidth: 2) }
+                    .frame(maxWidth: .infinity, minHeight: 70, alignment: .leading).padding(14).background(.secondary.opacity(isSelected ? 0.14 : 0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous)).overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(isSelected ? morphCoral : .clear, lineWidth: 2) }
                 }.buttonStyle(.plain).disabled(appearance.isSaving)
             }
         }
@@ -57,9 +53,30 @@ struct MorphSelectionView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Preview").font(.headline)
             HStack(alignment: .bottom, spacing: 14) {
-                Image("MorphBoy").resizable().scaledToFit().frame(width: 150, height: 190).background(.blue.opacity(0.09), in: RoundedRectangle(cornerRadius: 14, style: .continuous)).rotation3DEffect(.degrees(previewAction == "turn" ? 180 : 0), axis: (0, 1, 0)).offset(x: previewAction == "walk" ? 8 : 0, y: previewAction == "jump" ? -22 : 0).animation(.easeInOut(duration: 0.55), value: previewAction)
-                HStack(spacing: 8) { ForEach(["walk", "jump", "turn"], id: \.self) { action in Button(action.capitalized) { previewAction = action; DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) { if previewAction == action { previewAction = nil } } }.buttonStyle(.bordered) } }
+                if let engine = gameModel.renderEngine {
+                    RustGameSurface(engine: engine, isActive: true, avatarPreviewMode: true)
+                        .frame(width: 260, height: 260)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                } else {
+                    ProgressView("Loading 3D preview…").frame(width: 260, height: 260)
+                }
+                Text(previewName).font(.caption).foregroundStyle(.secondary)
+                HStack(spacing: 8) { ForEach(["walk", "jump", "turn"], id: \.self) { action in Button(action.capitalized) { gameModel.playMorphPreview(action) }.buttonStyle(.bordered) } }
             }
         }
     }
+
+    private var previewName: String {
+        appearance.presets.first { preset in preset.base == appearance.draftBase && preset.parts.count == appearance.draftParts.count && preset.parts.allSatisfy { appearance.draftParts.contains($0) } && preset.face == appearance.draftFace }?.displayName ?? "Custom morph"
+    }
+
+    private func syncPreviewAppearance() {
+        guard let base = appearance.draftBase else { return }
+        var value: [String: Any] = ["version": 2, "base": base,
+            "parts": appearance.draftParts, "parameters": [:], "revision": 0]
+        if let face = appearance.draftFace { value["face"] = face }
+        guard JSONSerialization.isValidJSONObject(value), let data = try? JSONSerialization.data(withJSONObject: value), let source = String(data: data, encoding: .utf8) else { return }
+        gameModel.setMorphPreviewAppearance(source)
+    }
+
 }

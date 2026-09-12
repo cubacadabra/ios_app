@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MainMenuView: View {
     @ObservedObject var model: AppViewModel
+    @ObservedObject var gameModel: GameViewModel
     let safetyDestination: SafetyCenterView
     @State private var isOpeningGame = false
     let openGame: (GameCatalogEntry) async throws -> Void
@@ -66,9 +67,9 @@ struct MainMenuView: View {
                     }
                     Divider().padding(.leading, 60)
                     NavigationLink {
-                        MorphSelectionView(model: model)
+                        MorphSelectionView(model: model, gameModel: gameModel)
                     } label: {
-                        menuRow(icon: "person.3", title: "Choose your morph", detail: MorphOption.option(for: model.authUser?.bodyID).label)
+                        menuRow(icon: "person.3", title: "Choose your morph", detail: "Customize your character")
                     }
                     Divider().padding(.leading, 60)
                     NavigationLink {
