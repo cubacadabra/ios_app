@@ -4,6 +4,8 @@ import SwiftUI
 import OSLog
 import UIKit
 
+private let morphPreviewActionDuration: TimeInterval = 1.5
+
 let gameLog = Logger(subsystem: "com.cubacadabra.app", category: "game")
 
 private let morphPreviewManifest = """
@@ -243,19 +245,23 @@ final class GameViewModel: ObservableObject {
         previewForward = action == "walk" ? 1 : 0
         previewJumpQueued = action == "jump"
         previewLookX = action == "turn" ? 6 : 0
-        previewActionUntil = Date().addingTimeInterval(0.75)
+        previewActionUntil = Date().addingTimeInterval(morphPreviewActionDuration)
     }
 
     func setMorphPreviewAppearance(_ source: String?) {
         guard let source,
               var value = (try? JSONSerialization.jsonObject(with: Data(source.utf8))) as? [String: Any],
-              value["base"] != nil else { return }
+              value["base"] != nil || value["body"] != nil else { return }
         previewAppearanceRevision = max(previewAppearanceRevision, morphPreviewEngine?.appearanceRevision ?? 0) &+ 1
         value["revision"] = previewAppearanceRevision
         guard JSONSerialization.isValidJSONObject(value),
               let data = try? JSONSerialization.data(withJSONObject: value),
               let normalized = String(data: data, encoding: .utf8) else { return }
-        morphPreviewEngine?.setLocalAppearance(normalized)
+        guard let preview = morphPreviewEngine else { return }
+        let status = preview.setLocalAppearance(normalized)
+        if status == 0 || status == 2 {
+            gameLog.error("Morph preview rejected appearance revision \(self.previewAppearanceRevision, privacy: .public) with status \(status, privacy: .public)")
+        }
     }
 
     func updateMorphPreview(source: String, packURLs: [URL]) {
@@ -281,13 +287,13 @@ final class GameViewModel: ObservableObject {
                 newPacks.forEach { self.morphPreviewPackData[$0.key] = $0.value }
                 if let preview = self.morphPreviewEngine {
                     newPacks.values.forEach(preview.appendMorphPack)
-                    preview.setLocalAppearance(source)
+                    self.setMorphPreviewAppearance(source)
                 } else {
                     let preview = try EngineBridge(manifest: morphPreviewManifest, script: morphPreviewScript)
                     preview.setAuthenticated(self.accountSession.accountID != nil)
                     preview.setMorphPacks(Array(self.morphPreviewPackData.values))
-                    _ = preview.setLocalAppearance(source)
                     self.morphPreviewEngine = preview
+                    self.setMorphPreviewAppearance(source)
                 }
             } catch {
                 gameLog.error("Morph preview load failed: \(error.localizedDescription, privacy: .public)")

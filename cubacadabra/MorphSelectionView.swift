@@ -23,13 +23,13 @@ struct MorphSelectionView: View {
                         .font(.system(size: 15, weight: .bold, design: .rounded)).tracking(1.1).foregroundStyle(.white).padding(.horizontal, 20).frame(minHeight: 56).background(morphCoral, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
                 }.buttonStyle(.plain).disabled(appearance.isSaving || !appearance.draftCanSave)
             }.frame(maxWidth: 620, alignment: .leading).padding(.horizontal, 24).padding(.top, 24).padding(.bottom, 28)
-        }.navigationTitle("Choose your morph").navigationBarTitleDisplayMode(.inline).background(Color(.systemBackground).ignoresSafeArea()).onAppear { model.beginMorphEdit(); syncPreviewAppearance() }.onChange(of: appearance.draftBase) { _ in syncPreviewAppearance() }.onChange(of: appearance.draftParts) { _ in syncPreviewAppearance() }.onChange(of: appearance.draftFace) { _ in syncPreviewAppearance() }.onChange(of: appearance.assets) { _ in syncPreviewAppearance() }.onReceive(previewClock) { date in gameModel.tickMorphPreview(at: date) }
+        }.navigationTitle("Choose your morph").navigationBarTitleDisplayMode(.inline).background(Color(.systemBackground).ignoresSafeArea()).onAppear { model.beginMorphEdit(); syncPreviewAppearance() }.onChange(of: appearance.draftBase) { _ in syncPreviewAppearance() }.onChange(of: appearance.draftParts) { _ in syncPreviewAppearance() }.onChange(of: appearance.draftFace) { _ in syncPreviewAppearance() }.onChange(of: appearance.draftRenderJson) { _ in syncPreviewAppearance() }.onChange(of: appearance.assets) { _ in syncPreviewAppearance() }.onReceive(previewClock) { date in gameModel.tickMorphPreview(at: date) }
     }
 
     private var starterList: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 145), spacing: 10)], spacing: 10) {
             ForEach(appearance.presets) { preset in
-                let isSelected = preset.base == appearance.draftBase && preset.parts.count == appearance.draftParts.count && preset.parts.allSatisfy { appearance.draftParts.contains($0) } && preset.face == appearance.draftFace
+                let isSelected = preset.id == appearance.draftPresetId
                 Button { model.chooseMorphPreset(preset.id) } label: {
                     VStack(alignment: .leading, spacing: 5) { Text(preset.displayName).font(.system(size: 16, weight: .bold, design: .rounded)); Text(preset.parts.isEmpty ? "Base morph" : "Ready to play").font(.caption).foregroundStyle(.secondary) }
                     .frame(maxWidth: .infinity, minHeight: 70, alignment: .leading).padding(14).background(.secondary.opacity(isSelected ? 0.14 : 0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous)).overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(isSelected ? morphCoral : .clear, lineWidth: 2) }
@@ -67,15 +67,12 @@ struct MorphSelectionView: View {
     }
 
     private var previewName: String {
-        appearance.presets.first { preset in preset.base == appearance.draftBase && preset.parts.count == appearance.draftParts.count && preset.parts.allSatisfy { appearance.draftParts.contains($0) } && preset.face == appearance.draftFace }?.displayName ?? "Custom morph"
+        appearance.presets.first { $0.id == appearance.draftPresetId }?.displayName ?? "Custom morph"
     }
 
     private func syncPreviewAppearance() {
-        guard let base = appearance.draftBase else { return }
-        var value: [String: Any] = ["version": 2, "base": base,
-            "parts": appearance.draftParts, "parameters": [:], "revision": 0]
-        if let face = appearance.draftFace { value["face"] = face }
-        guard JSONSerialization.isValidJSONObject(value), let data = try? JSONSerialization.data(withJSONObject: value), let source = String(data: data, encoding: .utf8) else { return }
+        guard let base = appearance.draftBase,
+              let source = appearance.draftRenderJson else { return }
         let ids = [base] + appearance.draftParts + (appearance.draftFace.map { [$0] } ?? [])
         let urls: [URL] = appearance.assets.compactMap { asset in
             guard ids.contains(asset.id), let path = asset.artifactURL else { return nil }

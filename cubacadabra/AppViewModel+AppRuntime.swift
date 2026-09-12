@@ -60,6 +60,7 @@ extension AppViewModel {
 
     func appearanceWireJSON() -> String? {
         let appearance = appSnapshot.appearance
+        if let source = appearance.selectedRenderJson { return source }
         guard let base = appearance.selectedBase else { return nil }
         var value: [String: Any] = ["version": 2, "base": base, "parts": appearance.selectedParts,
             "parameters": [:], "revision": 0]
