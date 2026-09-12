@@ -74,6 +74,8 @@ final class GameViewModel: ObservableObject {
     private var previewGestureLookX: Float = 0
     private var previewGestureLookY: Float = 0
     private var previewZoomDelta: Float = 0
+    private var previewMoveForward: Float = 0
+    private var previewMoveStrafe: Float = 0
     private var previewActionUntil: Date = .distantPast
     private var previewAppearanceRevision: UInt32 = 0
     var noticeTask: Task<Void, Never>?
@@ -232,9 +234,10 @@ final class GameViewModel: ObservableObject {
         previewLastTick = date
         let delta = Float(min(max(date.timeIntervalSince(previous), 0), 0.05))
         let active = date < previewActionUntil
+        let forward = min(max((active ? previewForward : 0) + previewMoveForward, -1), 1)
         engine.setInput(
-            forward: active ? previewForward : 0,
-            strafe: 0,
+            forward: forward,
+            strafe: previewMoveStrafe,
             sprint: false,
             jump: active && previewJumpQueued,
             climb: false,
@@ -259,6 +262,17 @@ final class GameViewModel: ObservableObject {
     func morphPreviewLookChanged(to translation: CGSize) {
         previewGestureLookX += Float(translation.width)
         previewGestureLookY += Float(translation.height)
+    }
+
+    func morphPreviewMoveChanged(to translation: CGSize) {
+        let radius: CGFloat = 54
+        previewMoveStrafe = Float(min(max(translation.width / radius, -1), 1))
+        previewMoveForward = Float(min(max(-translation.height / radius, -1), 1))
+    }
+
+    func morphPreviewMoveEnded() {
+        previewMoveForward = 0
+        previewMoveStrafe = 0
     }
 
     func morphPreviewZoomChangedBy(delta: CGFloat) {

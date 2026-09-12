@@ -73,7 +73,7 @@ struct MorphSelectionView: View {
                         .padding(.horizontal, 24)
                         .padding(.top, 8)
 
-                    previewStage(height: min(max(proxy.size.height * 0.32, 238), 340))
+                    previewStage(height: min(max(proxy.size.height * 0.28, 220), 300))
                         .frame(maxWidth: 760)
                         .padding(.horizontal, 12)
                         .padding(.top, 8)
@@ -200,6 +200,8 @@ struct MorphSelectionView: View {
                     engine: engine,
                     isActive: true,
                     avatarPreviewMode: true,
+                    onMoveChanged: { gameModel.morphPreviewMoveChanged(to: $0) },
+                    onMoveEnded: { gameModel.morphPreviewMoveEnded() },
                     onLookChanged: { gameModel.morphPreviewLookChanged(to: $0) },
                     onZoomDelta: { gameModel.morphPreviewZoomChangedBy(delta: $0) }
                 )
@@ -234,7 +236,7 @@ struct MorphSelectionView: View {
                 }
                 Spacer()
                 HStack(alignment: .bottom) {
-                    Text("Drag to orbit · Pinch to zoom")
+                    Text("Left: move · Right: orbit")
                         .font(.system(size: 10, weight: .semibold, design: .rounded))
                         .foregroundStyle(.white.opacity(0.72))
                         .lineLimit(1)
@@ -308,39 +310,36 @@ struct MorphSelectionView: View {
             categoryStrip
                 .padding(.top, 12)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    Group {
-                        if appearance.isLoading {
-                            HStack(spacing: 12) {
-                                ProgressView()
-                                Text("Loading morphs…")
-                                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                            }
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, minHeight: 190)
-                        } else if tab == 0 {
-                            starterList
-                        } else {
-                            customizeList
+            VStack(alignment: .leading, spacing: 0) {
+                Group {
+                    if appearance.isLoading {
+                        HStack(spacing: 12) {
+                            ProgressView()
+                            Text("Loading morphs…")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
                         }
-                    }
-                    .padding(.top, 20)
-
-                    if let feedback = appearance.feedback {
-                        Label(
-                            feedback.message,
-                            systemImage: feedback.kind == .error ? "exclamationmark.circle.fill" : "checkmark.circle.fill"
-                        )
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                        .foregroundStyle(feedback.kind == .error ? Color.red : Color.green)
-                        .padding(.horizontal, 20)
-                        .padding(.top, 18)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 190)
+                    } else if tab == 0 {
+                        starterList
+                    } else {
+                        customizeList
                     }
                 }
-                .padding(.bottom, 24)
+                .padding(.top, 16)
+
+                if let feedback = appearance.feedback {
+                    Label(
+                        feedback.message,
+                        systemImage: feedback.kind == .error ? "exclamationmark.circle.fill" : "checkmark.circle.fill"
+                    )
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .foregroundStyle(feedback.kind == .error ? Color.red : Color.green)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 14)
+                }
             }
-            .scrollIndicators(.hidden)
+            .padding(.bottom, 16)
         }
         .background(Color(.systemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))

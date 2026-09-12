@@ -9,6 +9,8 @@ struct RustGameSurface: UIViewRepresentable {
     let engine: EngineBridge
     let isActive: Bool
     var avatarPreviewMode: Bool = false
+    var onMoveChanged: (CGSize) -> Void = { _ in }
+    var onMoveEnded: () -> Void = {}
     var onLookChanged: (CGSize) -> Void = { _ in }
     var onLookEnded: () -> Void = {}
     var onZoomDelta: (CGFloat) -> Void = { _ in }
@@ -85,6 +87,9 @@ struct RustGameSurface: UIViewRepresentable {
                     y: Float(point.y)
                 )
             }
+            view.usesSplitPreviewControls = surface.avatarPreviewMode
+            view.onMoveChanged = surface.onMoveChanged
+            view.onMoveEnded = surface.onMoveEnded
             view.onLookChanged = surface.onLookChanged
             view.onLookEnded = surface.onLookEnded
             view.onZoomDelta = surface.onZoomDelta
@@ -192,6 +197,9 @@ final class InteractiveGameView: MTKView {
     var onViewportChange: ((CGSize, CGFloat, UIEdgeInsets) -> Void)?
     var onDrawableSizeChange: ((CGSize) -> Void)?
     var onPointer: ((UInt64, UInt8, CGPoint) -> Bool)?
+    var usesSplitPreviewControls = false
+    var onMoveChanged: ((CGSize) -> Void)?
+    var onMoveEnded: (() -> Void)?
     var onLookChanged: ((CGSize) -> Void)?
     var onLookEnded: (() -> Void)?
     var onZoomDelta: ((CGFloat) -> Void)?
@@ -202,6 +210,7 @@ final class InteractiveGameView: MTKView {
     private var pointerIDs: [ObjectIdentifier: UInt64] = [:]
     private var uiPointers = Set<UInt64>()
     private var cameraTouches: [UInt64: CGPoint] = [:]
+    private var cameraTouchStarts: [UInt64: CGPoint] = [:]
     private var cameraTouchMoved = false
     private var previousPinchDistance: CGFloat?
     private var previousPinchIDs: [UInt64] = []
@@ -232,8 +241,10 @@ final class InteractiveGameView: MTKView {
                 uiPointers.insert(pointerID)
             } else {
                 cameraTouches[pointerID] = point
+                cameraTouchStarts[pointerID] = point
                 if cameraTouches.count >= 2 {
                     // A second camera finger is a gesture, never a world tap.
+                    onMoveEnded?()
                     cameraTouchMoved = true
                 }
             }
@@ -249,7 +260,13 @@ final class InteractiveGameView: MTKView {
                 _ = onPointer?(pointerID, UInt8(CUBACADABRA_UI_POINTER_MOVE), point)
             } else if cameraTouches[pointerID] != nil {
                 if cameraTouches.count == 1, let previous = cameraTouches[pointerID] {
-                    onLookChanged?(CGSize(width: point.x - previous.x, height: point.y - previous.y))
+                    if usesSplitPreviewControls,
+                       let start = cameraTouchStarts[pointerID],
+                       start.x < bounds.midX {
+                        onMoveChanged?(CGSize(width: point.x - start.x, height: point.y - start.y))
+                    } else {
+                        onLookChanged?(CGSize(width: point.x - previous.x, height: point.y - previous.y))
+                    }
                     cameraTouchMoved = true
                 }
                 cameraTouches[pointerID] = point
@@ -268,6 +285,7 @@ final class InteractiveGameView: MTKView {
 
     private func finish(_ touches: Set<UITouch>, phase: UInt8) {
         let wasCameraInteraction = !cameraTouches.isEmpty
+        onMoveEnded?()
         for touch in touches {
             let pointerID = pointerID(for: touch)
             let point = touch.location(in: self)
@@ -275,6 +293,7 @@ final class InteractiveGameView: MTKView {
                 _ = onPointer?(pointerID, phase, point)
             } else {
                 cameraTouches.removeValue(forKey: pointerID)
+                cameraTouchStarts.removeValue(forKey: pointerID)
             }
             pointerIDs.removeValue(forKey: ObjectIdentifier(touch))
         }
@@ -287,6 +306,11 @@ final class InteractiveGameView: MTKView {
                 onWorldTap?()
             }
             cameraTouchMoved = false
+        } else if cameraTouches.count == 1 {
+            // A finger remaining after a pinch begins a fresh move/orbit gesture.
+            for (pointerID, point) in cameraTouches {
+                cameraTouchStarts[pointerID] = point
+            }
         }
         updatePinchDistance()
     }
