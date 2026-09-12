@@ -62,6 +62,7 @@ final class GameViewModel: ObservableObject {
     private var previewJumpQueued = false
     private var previewLookX: Float = 0
     private var previewActionUntil: Date = .distantPast
+    private var previewAppearanceRevision: UInt32 = 0
     var noticeTask: Task<Void, Never>?
     var moderationNoticeTask: Task<Void, Never>?
     var buildActionNoticeTask: Task<Void, Never>?
@@ -239,8 +240,15 @@ final class GameViewModel: ObservableObject {
     }
 
     func setMorphPreviewAppearance(_ source: String?) {
-        guard let source else { return }
-        engine?.setLocalAppearance(source)
+        guard let source,
+              var value = (try? JSONSerialization.jsonObject(with: Data(source.utf8))) as? [String: Any],
+              value["base"] != nil else { return }
+        previewAppearanceRevision = max(previewAppearanceRevision, engine?.appearanceRevision ?? 0) &+ 1
+        value["revision"] = previewAppearanceRevision
+        guard JSONSerialization.isValidJSONObject(value),
+              let data = try? JSONSerialization.data(withJSONObject: value),
+              let normalized = String(data: data, encoding: .utf8) else { return }
+        engine?.setLocalAppearance(normalized)
     }
 
     func setMove(strafe: Float, forward: Float) {
