@@ -30,9 +30,15 @@ sync_game_package() {
   fi
 
   echo "Building $game_id package into the iOS app bundle."
+  # This is a generated DerivedData directory. Remove only an unmarked legacy
+  # package so the builder's protection still applies to normal user outputs.
+  if [ -d "$package_build" ] && [ ! -f "$package_build/.cubacadabra-build" ]; then
+    rm -rf "$package_build"
+  fi
   PYTHONPATH="$tools_dir/src${PYTHONPATH:+:$PYTHONPATH}" \
     python3 -m cubacadabra build-game "$game_project" --output "$package_build"
   mkdir -p "$package_destination"
+  cp "$package_build/package.json" "$package_destination/package.json"
   cp "$package_build/manifest.json" "$manifest_destination"
   cp "$package_build/game.luau" "$script_destination"
   if [ -d "$package_build/assets" ]; then

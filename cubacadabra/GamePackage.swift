@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import CoreGraphics
 import ImageIO
+import CryptoKit
 
 enum MorphPackCache {
     private static let directoryName = "MorphPreviewPacks-v1"
@@ -43,8 +44,7 @@ struct GamePackageLoader {
     // Versioning these keys separates per-game packages from older caches.
     // Release selection below also keeps an equal-version cache from masking
     // the package shipped in a newer app build.
-    private static let cachedManifestKeyPrefix = "cubacadabra.cached-manifest.v4."
-    private static let cachedScriptKeyPrefix = "cubacadabra.cached-script.v4."
+    private static let cachedPackageKeyPrefix = "cubacadabra.cached-package.v5."
     private static let maximumManifestBytes = 512_000
     private static let maximumScriptBytes = 512_000
     private static let maximumImageAssetBytes = 8 * 1024 * 1024
@@ -112,8 +112,11 @@ struct GamePackageLoader {
         let baseURL = remoteBaseURL(for: gameID)
         let manifestURL = baseURL.appendingPathComponent("manifest.json")
         let scriptURL = baseURL.appendingPathComponent("game.luau")
-        guard let manifestData = try? await fetch(manifestURL, maximumBytes: Self.maximumManifestBytes),
+        let packageURL = baseURL.appendingPathComponent("package.json")
+        guard let packageData = try? await fetch(packageURL, maximumBytes: Self.maximumManifestBytes),
+              let manifestData = try? await fetch(manifestURL, maximumBytes: Self.maximumManifestBytes),
               let scriptData = try? await fetch(scriptURL, maximumBytes: Self.maximumScriptBytes),
+              verifyPackageDescriptor(packageData, gameID: gameID, manifestData: manifestData, scriptData: scriptData),
               let script = String(data: scriptData, encoding: .utf8),
               let loaded = try? makePackage(
                 manifestData: manifestData,
@@ -122,8 +125,7 @@ struct GamePackageLoader {
                 expectedGameID: gameID
               ),
               (try? await loadImageAssets(from: loaded, baseURL: baseURL)) != nil else { return }
-        UserDefaults.standard.set(manifestData, forKey: Self.cachedManifestKeyPrefix + gameID)
-        UserDefaults.standard.set(script, forKey: Self.cachedScriptKeyPrefix + gameID)
+        cachePackage(packageData: packageData, manifestData: manifestData, script: script, gameID: gameID)
     }
 
     private func fetchPackage(
@@ -132,6 +134,10 @@ struct GamePackageLoader {
         cache: Bool,
         additionalMorphPackURLs: [URL]
     ) async throws -> LoadedGamePackage {
+        let packageData = try await fetch(
+            baseURL.appendingPathComponent("package.json"),
+            maximumBytes: Self.maximumManifestBytes
+        )
         let manifestURL = baseURL.appendingPathComponent("manifest.json")
         let scriptURL = baseURL.appendingPathComponent("game.luau")
         NSLog(
@@ -144,6 +150,9 @@ struct GamePackageLoader {
         )
         let manifestData = try await fetch(manifestURL, maximumBytes: Self.maximumManifestBytes)
         let scriptData = try await fetch(scriptURL, maximumBytes: Self.maximumScriptBytes)
+        guard verifyPackageDescriptor(packageData, gameID: gameID, manifestData: manifestData, scriptData: scriptData) else {
+            throw GamePackageError.invalidBundledPackage
+        }
         guard let script = String(data: scriptData, encoding: .utf8) else { throw GamePackageError.invalidScript }
         let loaded = try makePackage(
             manifestData: manifestData,
@@ -163,10 +172,7 @@ struct GamePackageLoader {
             scriptData.count,
             loadedPackage.imageAssets.count
         )
-        if cache {
-            UserDefaults.standard.set(manifestData, forKey: Self.cachedManifestKeyPrefix + gameID)
-            UserDefaults.standard.set(script, forKey: Self.cachedScriptKeyPrefix + gameID)
-        }
+        if cache { cachePackage(packageData: packageData, manifestData: manifestData, script: script, gameID: gameID) }
         return loadedPackage
     }
 
@@ -185,10 +191,19 @@ struct GamePackageLoader {
             withExtension: "luau",
             subdirectory: packageSubdirectory
         )
-        guard let manifestURL, let scriptURL,
+        let packageURL = Bundle.main.url(
+            forResource: "package",
+            withExtension: "json",
+            subdirectory: packageSubdirectory
+        )
+        guard let packageURL, let manifestURL, let scriptURL,
+              let packageData = try? Data(contentsOf: packageURL),
               let manifestData = try? Data(contentsOf: manifestURL),
               let scriptData = try? Data(contentsOf: scriptURL),
               let script = String(data: scriptData, encoding: .utf8) else { throw GamePackageError.missingBundledPackage }
+        guard verifyPackageDescriptor(packageData, gameID: gameID, manifestData: manifestData, scriptData: scriptData) else {
+            throw GamePackageError.invalidBundledPackage
+        }
 #if DEBUG
         NSLog("Cubacadabra using %@ package at %@", gameID, scriptURL.path)
 #endif
@@ -209,10 +224,13 @@ struct GamePackageLoader {
         for gameID: String,
         additionalMorphPackURLs: [URL]
     ) async -> LoadedGamePackage? {
-        guard let manifestData = cachedManifestData(for: gameID), let script = cachedScriptData(for: gameID) else { return nil }
+        guard let cached = cachedPackageData(for: gameID),
+              verifyPackageDescriptor(cached.package, gameID: gameID, manifestData: cached.manifest, scriptData: Data(cached.script.utf8)),
+              cached.manifest.count <= Self.maximumManifestBytes,
+              cached.script.utf8.count <= Self.maximumScriptBytes else { return nil }
         guard let loaded = try? makePackage(
-            manifestData: manifestData,
-            script: script,
+            manifestData: cached.manifest,
+            script: cached.script,
             audioBaseURL: remoteBaseURL(for: gameID),
             expectedGameID: gameID
         ) else { return nil }
@@ -226,14 +244,38 @@ struct GamePackageLoader {
         )) ?? loaded
     }
 
-    private func cachedManifestData(for gameID: String) -> Data? {
-        guard let data = UserDefaults.standard.data(forKey: Self.cachedManifestKeyPrefix + gameID), data.count <= Self.maximumManifestBytes else { return nil }
-        return data
+    private struct CachedPackage: Codable {
+        let package: Data
+        let manifest: Data
+        let script: String
     }
 
-    private func cachedScriptData(for gameID: String) -> String? {
-        guard let script = UserDefaults.standard.string(forKey: Self.cachedScriptKeyPrefix + gameID), script.utf8.count <= Self.maximumScriptBytes else { return nil }
-        return script
+    private func cachedPackageData(for gameID: String) -> CachedPackage? {
+        guard let data = UserDefaults.standard.data(forKey: Self.cachedPackageKeyPrefix + gameID) else { return nil }
+        return try? JSONDecoder().decode(CachedPackage.self, from: data)
+    }
+
+    private func cachePackage(packageData: Data, manifestData: Data, script: String, gameID: String) {
+        guard let data = try? JSONEncoder().encode(CachedPackage(package: packageData, manifest: manifestData, script: script)) else { return }
+        UserDefaults.standard.set(data, forKey: Self.cachedPackageKeyPrefix + gameID)
+    }
+
+    private func verifyPackageDescriptor(
+        _ packageData: Data,
+        gameID: String,
+        manifestData: Data,
+        scriptData: Data
+    ) -> Bool {
+        guard let descriptor = try? JSONSerialization.jsonObject(with: packageData) as? [String: Any],
+              descriptor["id"] as? String == gameID,
+              descriptor["entry"] as? String == "game.luau",
+              descriptor["manifest"] as? String == "manifest.json",
+              let checksums = descriptor["sha256"] as? [String: String],
+              let manifestHash = checksums["manifest.json"],
+              let scriptHash = checksums["game.luau"] else { return false }
+        let actualManifestHash = SHA256.hash(data: manifestData).map { String(format: "%02x", $0) }.joined()
+        let actualScriptHash = SHA256.hash(data: scriptData).map { String(format: "%02x", $0) }.joined()
+        return manifestHash == actualManifestHash && scriptHash == actualScriptHash
     }
 
     private func makePackage(
@@ -418,7 +460,8 @@ struct GamePackageLoader {
     }
 
     private static func isValidGameID(_ gameID: String) -> Bool {
-        gameID.range(of: "^[a-z0-9]+(?:-[a-z0-9]+)*$", options: .regularExpression) != nil
+        (3...64).contains(gameID.utf8.count)
+            && gameID.range(of: "^[a-z0-9]+(?:-[a-z0-9]+)*$", options: .regularExpression) != nil
     }
 
     private func fetch(_ url: URL, maximumBytes: Int) async throws -> Data {
