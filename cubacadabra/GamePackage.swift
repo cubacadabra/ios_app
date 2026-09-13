@@ -117,8 +117,10 @@ struct GamePackageLoader {
               let manifestData = try? await fetch(manifestURL, maximumBytes: Self.maximumManifestBytes),
               let scriptData = try? await fetch(scriptURL, maximumBytes: Self.maximumScriptBytes),
               verifyPackageDescriptor(packageData, gameID: gameID, manifestData: manifestData, scriptData: scriptData),
+              let packageDescriptor = String(data: packageData, encoding: .utf8),
               let script = String(data: scriptData, encoding: .utf8),
               let loaded = try? makePackage(
+                packageDescriptor: packageDescriptor,
                 manifestData: manifestData,
                 script: script,
                 audioBaseURL: baseURL,
@@ -155,6 +157,7 @@ struct GamePackageLoader {
         }
         guard let script = String(data: scriptData, encoding: .utf8) else { throw GamePackageError.invalidScript }
         let loaded = try makePackage(
+            packageDescriptor: String(data: packageData, encoding: .utf8)!,
             manifestData: manifestData,
             script: script,
             audioBaseURL: baseURL,
@@ -208,6 +211,7 @@ struct GamePackageLoader {
         NSLog("Cubacadabra using %@ package at %@", gameID, scriptURL.path)
 #endif
         let loaded = try makePackage(
+            packageDescriptor: String(data: packageData, encoding: .utf8)!,
             manifestData: manifestData,
             script: script,
             audioBaseURL: manifestURL.deletingLastPathComponent(),
@@ -229,19 +233,20 @@ struct GamePackageLoader {
               cached.manifest.count <= Self.maximumManifestBytes,
               cached.script.utf8.count <= Self.maximumScriptBytes else { return nil }
         guard let loaded = try? makePackage(
+            packageDescriptor: String(data: cached.package, encoding: .utf8)!,
             manifestData: cached.manifest,
             script: cached.script,
             audioBaseURL: remoteBaseURL(for: gameID),
             expectedGameID: gameID
         ) else { return nil }
-        // Image payloads are not stored in UserDefaults with the manifest and
-        // script. Keep a valid cached game playable offline, using its normal
-        // material-color fallback until the package can be refreshed online.
+        // Cached manifests and scripts are not enough to identify a coherent
+        // release. Revalidate every declared payload against the descriptor
+        // before allowing a cached package to run.
         return (try? await loadImageAssets(
             from: loaded,
             baseURL: remoteBaseURL(for: gameID),
             additionalMorphPackURLs: additionalMorphPackURLs
-        )) ?? loaded
+        ))
     }
 
     private struct CachedPackage: Codable {
@@ -272,13 +277,16 @@ struct GamePackageLoader {
               descriptor["manifest"] as? String == "manifest.json",
               let checksums = descriptor["sha256"] as? [String: String],
               let manifestHash = checksums["manifest.json"],
-              let scriptHash = checksums["game.luau"] else { return false }
+              let scriptHash = checksums["game.luau"],
+              let manifestObject = try? JSONSerialization.jsonObject(with: manifestData) as? [String: Any],
+              String(describing: descriptor["version"] ?? "") == String(describing: manifestObject["version"] ?? "") else { return false }
         let actualManifestHash = SHA256.hash(data: manifestData).map { String(format: "%02x", $0) }.joined()
         let actualScriptHash = SHA256.hash(data: scriptData).map { String(format: "%02x", $0) }.joined()
         return manifestHash == actualManifestHash && scriptHash == actualScriptHash
     }
 
     private func makePackage(
+        packageDescriptor: String,
         manifestData: Data,
         script: String,
         audioBaseURL: URL,
@@ -298,6 +306,7 @@ struct GamePackageLoader {
         let audioAssets = try normalizedAudioAssets(package.assets?.audio, baseURL: audioBaseURL)
         return LoadedGamePackage(
             package: package,
+            packageDescriptor: packageDescriptor,
             manifest: manifest,
             script: script,
             audioAssets: audioAssets,
@@ -359,8 +368,9 @@ struct GamePackageLoader {
             NSLog("Cubacadabra image asset loaded: id=%@ bytes=%ld", id, data.count)
             imageAssets[id] = LoadedGameImageAsset(data: data)
         }
-        return LoadedGamePackage(
+        let result = LoadedGamePackage(
             package: loaded.package,
+            packageDescriptor: loaded.packageDescriptor,
             manifest: loaded.manifest,
             script: loaded.script,
             audioAssets: loaded.audioAssets,
@@ -372,6 +382,47 @@ struct GamePackageLoader {
             ),
             version: loaded.version
         )
+        try await verifyPackageContents(result, baseURL: baseURL)
+        return result
+    }
+
+    private func verifyPackageContents(
+        _ loaded: LoadedGamePackage,
+        baseURL: URL
+    ) async throws {
+        guard let descriptorData = loaded.packageDescriptor.data(using: .utf8),
+              let descriptor = try JSONSerialization.jsonObject(with: descriptorData) as? [String: Any],
+              let files = descriptor["files"] as? [String],
+              let checksums = descriptor["sha256"] as? [String: String],
+              Set(files).count == files.count,
+              files.contains("manifest.json"),
+              files.contains("game.luau") else {
+            throw GamePackageError.invalidBundledPackage
+        }
+        for path in files {
+            guard !path.hasPrefix("/"),
+                  !path.split(separator: "/").contains(where: { $0 == ".." }),
+                  let expected = checksums[path] else {
+                throw GamePackageError.invalidBundledPackage
+            }
+            let data: Data
+            if path == "manifest.json" {
+                data = Data(loaded.manifest.utf8)
+            } else if path == "game.luau" {
+                data = Data(loaded.script.utf8)
+            } else if baseURL.isFileURL {
+                guard let fileData = try? Data(contentsOf: baseURL.appendingPathComponent(path)) else {
+                    throw GamePackageError.invalidBundledPackage
+                }
+                data = fileData
+            } else {
+                data = try await fetch(baseURL.appendingPathComponent(path), maximumBytes: Self.maximumMorphPackBytes)
+            }
+            let actual = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+            guard actual == expected else {
+                throw GamePackageError.invalidBundledPackage
+            }
+        }
     }
 
     private func loadMorphPacks(
@@ -497,6 +548,7 @@ struct GamePackageLoader {
 
 struct LoadedGamePackage {
     let package: GamePackage
+    let packageDescriptor: String
     let manifest: String
     let script: String
     let audioAssets: [String: LoadedGameAudioAsset]
