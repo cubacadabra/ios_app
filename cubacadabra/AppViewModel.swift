@@ -9,6 +9,7 @@ struct AppGameSession: Equatable {
     var username: String?
     var bodyID: String?
     var appearanceJSON: String?
+    var morphArtifactURLs: [String: String] = [:]
     var blockedUserIDs: Set<String> = []
 }
 
@@ -179,6 +180,17 @@ final class AppViewModel: ObservableObject {
             accessToken: accessToken,
             username: authUser?.username, bodyID: authUser?.bodyID,
             appearanceJSON: appearanceWireJSON(),
+            morphArtifactURLs: morphArtifactURLs(),
             blockedUserIDs: Set(appSnapshot.safety.blockedUserIDs))
+    }
+
+    func morphArtifactURLs() -> [String: String] {
+        appSnapshot.appearance.assets.reduce(into: [String: String]()) { urls, asset in
+            guard let path = asset.artifactURL,
+                  let url = URL(string: path, relativeTo: ClientConfiguration.backendAPIURL)?.absoluteURL else {
+                return
+            }
+            urls[asset.id] = url.absoluteString
+        }
     }
 }

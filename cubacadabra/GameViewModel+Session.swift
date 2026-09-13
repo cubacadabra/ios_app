@@ -1,6 +1,23 @@
 import Foundation
 
 extension GameViewModel {
+    func accountMorphPackURLs() -> [URL] {
+        guard let source = accountSession.appearanceJSON,
+              let data = source.data(using: .utf8),
+              let appearance = try? JSONDecoder().decode(WorldAppearance.self, from: data),
+              let base = appearance.base else {
+            return []
+        }
+        let ids = [base] + (appearance.parts ?? []) + (appearance.face.map { [$0] } ?? [])
+        var seen = Set<String>()
+        return ids.compactMap { id in
+            guard seen.insert(id).inserted,
+                  let source = accountSession.morphArtifactURLs[id],
+                  let url = URL(string: source) else { return nil }
+            return url
+        }
+    }
+
     /// Replayed by the shell even when no engine is loaded yet.
     func applyAccountSession(_ session: AppGameSession) {
         let previous = accountSession

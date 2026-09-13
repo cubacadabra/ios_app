@@ -66,6 +66,7 @@ extension AppViewModel {
     private func dispatchApp(_ action: [String: Any]) {
         let previousBlockedUserIDs = appSnapshot.safety.blockedUserIDs
         let previousAppearanceJSON = appearanceWireJSON()
+        let previousMorphArtifactURLs = morphArtifactURLs()
         profileRevision &+= 1
         appRuntime.dispatch(action)
         appSnapshot = appRuntime.snapshot()
@@ -92,6 +93,9 @@ extension AppViewModel {
             publishGameSession()
         }
         if previousAppearanceJSON != appearanceWireJSON() {
+            publishGameSession()
+        }
+        if previousMorphArtifactURLs != morphArtifactURLs() {
             publishGameSession()
         }
         finishBirthdayWaiterIfReady()

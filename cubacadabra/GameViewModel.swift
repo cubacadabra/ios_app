@@ -32,44 +32,10 @@ private enum MorphPreviewPackOutcome {
     case failure(URL, Error)
 }
 
-private enum MorphPreviewPackCache {
-    private static let directoryName = "MorphPreviewPacks-v1"
-
-    private static func cacheURL(for url: URL) -> URL? {
-        let hash = url.deletingPathExtension().lastPathComponent
-        guard hash.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil,
-              let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
-            return nil
-        }
-        return caches.appendingPathComponent(directoryName, isDirectory: true)
-            .appendingPathComponent("\(hash).morphpack")
-    }
-
-    static func read(for url: URL) -> Data? {
-        guard let path = cacheURL(for: url),
-              let data = try? Data(contentsOf: path),
-              !data.isEmpty else { return nil }
-        return data
-    }
-
-    static func write(_ data: Data, for url: URL) {
-        guard let path = cacheURL(for: url) else { return }
-        do {
-            try FileManager.default.createDirectory(
-                at: path.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            try data.write(to: path, options: .atomic)
-        } catch {
-            gameLog.debug("Morph preview cache write skipped: \(error.localizedDescription, privacy: .public)")
-        }
-    }
-}
-
 private func fetchMorphPreviewPack(_ url: URL) async throws -> MorphPreviewPackFetch {
     try Task.checkCancellation()
     let started = Date()
-    if let data = MorphPreviewPackCache.read(for: url) {
+    if let data = MorphPackCache.read(for: url) {
         return MorphPreviewPackFetch(
             url: url,
             data: data,
@@ -90,7 +56,7 @@ private func fetchMorphPreviewPack(_ url: URL) async throws -> MorphPreviewPackF
     guard data.count <= 64 * 1024 * 1024 else {
         throw GamePackageError.invalidMorphPack("preview")
     }
-    MorphPreviewPackCache.write(data, for: url)
+    MorphPackCache.write(data, for: url)
     return MorphPreviewPackFetch(
         url: url,
         data: data,
@@ -226,7 +192,11 @@ final class GameViewModel: ObservableObject {
         errorMessage = nil
         do {
             let firstGame = GameCatalogEntry.available[0]
-            let loaded = try await loader.load(gameID: firstGame.id, packageBaseURL: firstGame.packageBaseURL)
+            let loaded = try await loader.load(
+                gameID: firstGame.id,
+                packageBaseURL: firstGame.packageBaseURL,
+                additionalMorphPackURLs: accountMorphPackURLs()
+            )
             guard generation == gameLoadGeneration, !Task.isCancelled else { return }
             let loadedPackage = loaded.package
             guard loadedPackage.worldDefinition(named: loadedPackage.initialWorld) != nil else {
@@ -636,7 +606,11 @@ final class GameViewModel: ObservableObject {
         isSelectingGame = true
         defer { if generation == gameLoadGeneration { isSelectingGame = false } }
 
-        let loaded = try await loader.load(gameID: game.id, packageBaseURL: game.packageBaseURL)
+        let loaded = try await loader.load(
+            gameID: game.id,
+            packageBaseURL: game.packageBaseURL,
+            additionalMorphPackURLs: accountMorphPackURLs()
+        )
         guard generation == gameLoadGeneration else { throw CancellationError() }
         try Task.checkCancellation()
         let nextEngine = try makeEngine(from: loaded)

@@ -3,6 +3,40 @@ import SwiftUI
 import CoreGraphics
 import ImageIO
 
+enum MorphPackCache {
+    private static let directoryName = "MorphPreviewPacks-v1"
+
+    private static func cacheURL(for url: URL) -> URL? {
+        let hash = url.deletingPathExtension().lastPathComponent
+        guard hash.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil,
+              let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+        return caches.appendingPathComponent(directoryName, isDirectory: true)
+            .appendingPathComponent("\(hash).morphpack")
+    }
+
+    static func read(for url: URL) -> Data? {
+        guard let path = cacheURL(for: url),
+              let data = try? Data(contentsOf: path),
+              !data.isEmpty else { return nil }
+        return data
+    }
+
+    static func write(_ data: Data, for url: URL) {
+        guard let path = cacheURL(for: url) else { return }
+        do {
+            try FileManager.default.createDirectory(
+                at: path.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try data.write(to: path, options: .atomic)
+        } catch {
+            NSLog("Cubacadabra morph pack cache write skipped: %@", error.localizedDescription)
+        }
+    }
+}
+
 /// Loads a validated game manifest and script from cache, bundle, or the host.
 struct GamePackageLoader {
     // The generated Luau package format changed with the Build Together UI.
@@ -23,7 +57,11 @@ struct GamePackageLoader {
     private static let morphIDPattern = "^[a-z0-9-]+:[a-z0-9_-]+(?:/[a-z0-9_-]+)*\\.v[1-9][0-9]*$"
     private static let morphPathPattern = "^assets/(?:[A-Za-z0-9_-][A-Za-z0-9._-]*/)*[A-Za-z0-9_-][A-Za-z0-9._-]*\\.morphpack$"
 
-    func load(gameID: String = "first-game", packageBaseURL: URL? = nil) async throws -> LoadedGamePackage {
+    func load(
+        gameID: String = "first-game",
+        packageBaseURL: URL? = nil,
+        additionalMorphPackURLs: [URL] = []
+    ) async throws -> LoadedGamePackage {
         guard Self.isValidGameID(gameID) else { throw GamePackageError.invalidGameID }
         NSLog(
             "Cubacadabra package load: game=%@ requestedBase=%@ backend=%@ gameBase=%@",
@@ -33,16 +71,21 @@ struct GamePackageLoader {
             ClientConfiguration.gameBaseURL(for: gameID).absoluteString
         )
         if let packageBaseURL {
-            return try await fetchPackage(for: gameID, baseURL: packageBaseURL, cache: false)
+            return try await fetchPackage(
+                for: gameID,
+                baseURL: packageBaseURL,
+                cache: false,
+                additionalMorphPackURLs: additionalMorphPackURLs
+            )
         }
 #if DEBUG
         // The Xcode build phase assembles the sibling game project into the
         // app bundle. Prefer that package during local development so a
         // source edit or package error is not hidden by an earlier cache.
-        return try await loadBundledPackage(for: gameID)
+        return try await loadBundledPackage(for: gameID, additionalMorphPackURLs: additionalMorphPackURLs)
 #else
-        let bundled = try? await loadBundledPackage(for: gameID)
-        let cached = await cachedPackage(for: gameID)
+        let bundled = try? await loadBundledPackage(for: gameID, additionalMorphPackURLs: additionalMorphPackURLs)
+        let cached = await cachedPackage(for: gameID, additionalMorphPackURLs: additionalMorphPackURLs)
         if let bundled {
             guard let cached,
                   let cachedVersion = cached.version,
@@ -53,7 +96,12 @@ struct GamePackageLoader {
             return cached
         }
         if let cached { return cached }
-        return try await fetchPackage(for: gameID, baseURL: remoteBaseURL(for: gameID), cache: true)
+        return try await fetchPackage(
+            for: gameID,
+            baseURL: remoteBaseURL(for: gameID),
+            cache: true,
+            additionalMorphPackURLs: additionalMorphPackURLs
+        )
 #endif
     }
 
@@ -78,7 +126,12 @@ struct GamePackageLoader {
         UserDefaults.standard.set(script, forKey: Self.cachedScriptKeyPrefix + gameID)
     }
 
-    private func fetchPackage(for gameID: String, baseURL: URL, cache: Bool) async throws -> LoadedGamePackage {
+    private func fetchPackage(
+        for gameID: String,
+        baseURL: URL,
+        cache: Bool,
+        additionalMorphPackURLs: [URL]
+    ) async throws -> LoadedGamePackage {
         let manifestURL = baseURL.appendingPathComponent("manifest.json")
         let scriptURL = baseURL.appendingPathComponent("game.luau")
         NSLog(
@@ -98,7 +151,11 @@ struct GamePackageLoader {
             audioBaseURL: baseURL,
             expectedGameID: gameID
         )
-        let loadedPackage = try await loadImageAssets(from: loaded, baseURL: baseURL)
+        let loadedPackage = try await loadImageAssets(
+            from: loaded,
+            baseURL: baseURL,
+            additionalMorphPackURLs: additionalMorphPackURLs
+        )
         NSLog(
             "Cubacadabra package loaded: game=%@ manifestBytes=%ld scriptBytes=%ld imageCount=%ld",
             gameID,
@@ -113,7 +170,10 @@ struct GamePackageLoader {
         return loadedPackage
     }
 
-    private func loadBundledPackage(for gameID: String) async throws -> LoadedGamePackage {
+    private func loadBundledPackage(
+        for gameID: String,
+        additionalMorphPackURLs: [URL]
+    ) async throws -> LoadedGamePackage {
         let packageSubdirectory = "games/\(gameID)"
         let manifestURL = Bundle.main.url(
             forResource: "manifest",
@@ -138,10 +198,17 @@ struct GamePackageLoader {
             audioBaseURL: manifestURL.deletingLastPathComponent(),
             expectedGameID: gameID
         )
-        return try await loadImageAssets(from: loaded, baseURL: manifestURL.deletingLastPathComponent())
+        return try await loadImageAssets(
+            from: loaded,
+            baseURL: manifestURL.deletingLastPathComponent(),
+            additionalMorphPackURLs: additionalMorphPackURLs
+        )
     }
 
-    private func cachedPackage(for gameID: String) async -> LoadedGamePackage? {
+    private func cachedPackage(
+        for gameID: String,
+        additionalMorphPackURLs: [URL]
+    ) async -> LoadedGamePackage? {
         guard let manifestData = cachedManifestData(for: gameID), let script = cachedScriptData(for: gameID) else { return nil }
         guard let loaded = try? makePackage(
             manifestData: manifestData,
@@ -152,7 +219,11 @@ struct GamePackageLoader {
         // Image payloads are not stored in UserDefaults with the manifest and
         // script. Keep a valid cached game playable offline, using its normal
         // material-color fallback until the package can be refreshed online.
-        return (try? await loadImageAssets(from: loaded, baseURL: remoteBaseURL(for: gameID))) ?? loaded
+        return (try? await loadImageAssets(
+            from: loaded,
+            baseURL: remoteBaseURL(for: gameID),
+            additionalMorphPackURLs: additionalMorphPackURLs
+        )) ?? loaded
     }
 
     private func cachedManifestData(for gameID: String) -> Data? {
@@ -219,7 +290,8 @@ struct GamePackageLoader {
 
     private func loadImageAssets(
         from loaded: LoadedGamePackage,
-        baseURL: URL
+        baseURL: URL,
+        additionalMorphPackURLs: [URL] = []
     ) async throws -> LoadedGamePackage {
         let definitions = try normalizedImageAssets(loaded.package.assets?.images, baseURL: baseURL)
         NSLog("Cubacadabra image assets declared: count=%ld base=%@", definitions.count, baseURL.absoluteString)
@@ -251,27 +323,43 @@ struct GamePackageLoader {
             script: loaded.script,
             audioAssets: loaded.audioAssets,
             imageAssets: imageAssets,
-            morphPacks: try await loadMorphPacks(from: loaded, baseURL: baseURL),
+            morphPacks: try await loadMorphPacks(
+                from: loaded,
+                baseURL: baseURL,
+                additionalMorphPackURLs: additionalMorphPackURLs
+            ),
             version: loaded.version
         )
     }
 
     private func loadMorphPacks(
         from loaded: LoadedGamePackage,
-        baseURL: URL
+        baseURL: URL,
+        additionalMorphPackURLs: [URL] = []
     ) async throws -> [LoadedGameMorphPack] {
         let definitions = try normalizedMorphPacks(loaded.package.assets?.morphPacks, baseURL: baseURL)
         var totalBytes = 0
         var packs: [LoadedGameMorphPack] = []
-        for (id, definition) in definitions.sorted(by: { $0.key < $1.key }) {
+        var entries = definitions.sorted(by: { $0.key < $1.key }).map { ($0.key, $0.value.url) }
+        var seenURLs = Set(entries.map { $0.1 })
+        for (index, url) in additionalMorphPackURLs.enumerated() where seenURLs.insert(url).inserted {
+            entries.append(("account-morph-\(index)", url))
+        }
+        for (id, url) in entries {
             let data: Data
-            if definition.url.isFileURL {
-                guard let fileData = try? Data(contentsOf: definition.url) else {
+            if url.isFileURL {
+                guard let fileData = try? Data(contentsOf: url) else {
                     throw GamePackageError.invalidMorphPack(id)
                 }
                 data = fileData
             } else {
-                data = try await fetch(definition.url, maximumBytes: Self.maximumMorphPackBytes)
+                if let cached = MorphPackCache.read(for: url) {
+                    data = cached
+                } else {
+                    let fetched = try await fetch(url, maximumBytes: Self.maximumMorphPackBytes)
+                    MorphPackCache.write(fetched, for: url)
+                    data = fetched
+                }
             }
             guard !data.isEmpty, data.count <= Self.maximumMorphPackBytes else {
                 throw GamePackageError.invalidMorphPack(id)
