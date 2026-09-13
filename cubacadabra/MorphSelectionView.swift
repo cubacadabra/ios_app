@@ -896,7 +896,6 @@ struct MorphSelectionView: View {
                 gameLog.error("Morph preview catalog is missing asset \(id, privacy: .public)")
                 return
             }
-            if asset.kind == "face" { continue }
             guard let path = asset.artifactURL,
                   let url = URL(string: path, relativeTo: ClientConfiguration.backendAPIURL)?.absoluteURL else {
                 gameLog.error("Morph asset \(id, privacy: .public) has no schema-5 artifact")
