@@ -8,6 +8,97 @@ private let morphPreviewActionDuration: TimeInterval = 1.5
 
 let gameLog = Logger(subsystem: "com.cubacadabra.app", category: "game")
 
+struct MorphPreviewDiagnostics: Equatable {
+    let totalPacks: Int
+    var completedPacks: Int
+    var loadedBytes: Int
+    var networkBytes: Int
+    var cacheHits: Int
+    var networkSeconds: TimeInterval
+    var gpuSeconds: TimeInterval?
+    var isLoading: Bool
+    var errorMessage: String?
+}
+
+private struct MorphPreviewPackFetch {
+    let url: URL
+    let data: Data
+    let fromDiskCache: Bool
+    let elapsed: TimeInterval
+}
+
+private enum MorphPreviewPackOutcome {
+    case success(MorphPreviewPackFetch)
+    case failure(URL, Error)
+}
+
+private enum MorphPreviewPackCache {
+    private static let directoryName = "MorphPreviewPacks-v1"
+
+    private static func cacheURL(for url: URL) -> URL? {
+        let hash = url.deletingPathExtension().lastPathComponent
+        guard hash.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil,
+              let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+        return caches.appendingPathComponent(directoryName, isDirectory: true)
+            .appendingPathComponent("\(hash).morphpack")
+    }
+
+    static func read(for url: URL) -> Data? {
+        guard let path = cacheURL(for: url),
+              let data = try? Data(contentsOf: path),
+              !data.isEmpty else { return nil }
+        return data
+    }
+
+    static func write(_ data: Data, for url: URL) {
+        guard let path = cacheURL(for: url) else { return }
+        do {
+            try FileManager.default.createDirectory(
+                at: path.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try data.write(to: path, options: .atomic)
+        } catch {
+            gameLog.debug("Morph preview cache write skipped: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+}
+
+private func fetchMorphPreviewPack(_ url: URL) async throws -> MorphPreviewPackFetch {
+    try Task.checkCancellation()
+    let started = Date()
+    if let data = MorphPreviewPackCache.read(for: url) {
+        return MorphPreviewPackFetch(
+            url: url,
+            data: data,
+            fromDiskCache: true,
+            elapsed: Date().timeIntervalSince(started)
+        )
+    }
+
+    var request = URLRequest(url: url)
+    request.timeoutInterval = 5
+    let (data, response) = try await URLSession.shared.data(for: request)
+    try Task.checkCancellation()
+    guard let http = response as? HTTPURLResponse,
+          (200..<300).contains(http.statusCode),
+          !data.isEmpty else {
+        throw GamePackageError.httpFailure((response as? HTTPURLResponse)?.statusCode ?? 0)
+    }
+    guard data.count <= 64 * 1024 * 1024 else {
+        throw GamePackageError.invalidMorphPack("preview")
+    }
+    MorphPreviewPackCache.write(data, for: url)
+    return MorphPreviewPackFetch(
+        url: url,
+        data: data,
+        fromDiskCache: false,
+        elapsed: Date().timeIntervalSince(started)
+    )
+}
+
 private let morphPreviewManifest = """
 {"id":"ios-morph-preview","version":"0.0.0","sdkVersion":"0.3.0","package":{"formatVersion":3,"entry":"game.luau"},"displayName":"Morph Preview","lobby":false,"startWorld":"lobby","launch":{"destinationWorld":"lobby","authoritative":false},"world":{"groundSize":12,"gridSize":0,"gridDivisions":0,"spawn":[0,0,0],"showSpawnPad":false}}
 """
@@ -56,8 +147,10 @@ final class GameViewModel: ObservableObject {
     let gameAudio = GameAudio()
     var engine: EngineBridge?
     @Published var morphPreviewEngine: EngineBridge?
+    @Published private(set) var morphPreviewDiagnostics: MorphPreviewDiagnostics?
     private var morphPreviewPackData: [URL: Data] = [:]
     private var morphPreviewGeneration: UInt64 = 0
+    private var morphPreviewTask: Task<Void, Never>?
     var lastTick: Date?
     var runtimeWorldIDs: [String] = []
     var lobbyEnabled = true
@@ -307,11 +400,13 @@ final class GameViewModel: ObservableObject {
     }
 
     func updateMorphPreview(source: String, packURLs: [URL], catalogRelease: String?) {
+        morphPreviewTask?.cancel()
         if previewCatalogRelease != catalogRelease {
             previewCatalogRelease = catalogRelease
             morphPreviewGeneration &+= 1
             morphPreviewPackData.removeAll()
             morphPreviewEngine = nil
+            morphPreviewDiagnostics = nil
             previewLastTick = nil
             previewAppearanceRevision = 0
             previewInitialZoomPending = true
@@ -323,24 +418,86 @@ final class GameViewModel: ObservableObject {
         }
         morphPreviewGeneration &+= 1
         let generation = morphPreviewGeneration
-        Task { [weak self] in
+        let existingURLs = packURLs.filter { morphPreviewPackData[$0] != nil }
+        let pendingURLs = packURLs.filter { morphPreviewPackData[$0] == nil }
+        morphPreviewDiagnostics = MorphPreviewDiagnostics(
+            totalPacks: packURLs.count,
+            completedPacks: existingURLs.count,
+            loadedBytes: existingURLs.reduce(0) { $0 + (morphPreviewPackData[$1]?.count ?? 0) },
+            networkBytes: 0,
+            cacheHits: existingURLs.count,
+            networkSeconds: 0,
+            gpuSeconds: pendingURLs.isEmpty ? 0 : nil,
+            isLoading: !pendingURLs.isEmpty,
+            errorMessage: nil
+        )
+        let task = Task { [weak self] in
             guard let self else { return }
+            defer {
+                if generation == self.morphPreviewGeneration {
+                    self.morphPreviewTask = nil
+                }
+            }
             do {
                 var newPacks: [URL: Data] = [:]
-                for url in packURLs where self.morphPreviewPackData[url] == nil {
-                    var request = URLRequest(url: url)
-                    request.timeoutInterval = 5
-                    let (data, response) = try await URLSession.shared.data(for: request)
-                    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), !data.isEmpty else {
-                        throw GamePackageError.httpFailure((response as? HTTPURLResponse)?.statusCode ?? 0)
+                var firstError: Error?
+                let networkStarted = Date()
+                await withTaskGroup(of: MorphPreviewPackOutcome.self) { group in
+                    for url in pendingURLs {
+                        group.addTask {
+                            do {
+                                return .success(try await fetchMorphPreviewPack(url))
+                            } catch {
+                                return .failure(url, error)
+                            }
+                        }
                     }
-                    guard data.count <= 64 * 1024 * 1024 else {
-                        throw GamePackageError.invalidMorphPack("preview")
+                    while let outcome = await group.next() {
+                        guard generation == self.morphPreviewGeneration else {
+                            group.cancelAll()
+                            return
+                        }
+                        switch outcome {
+                        case .success(let result):
+                            newPacks[result.url] = result.data
+                            if var diagnostics = self.morphPreviewDiagnostics {
+                                diagnostics.completedPacks += 1
+                                diagnostics.loadedBytes += result.data.count
+                                diagnostics.cacheHits += result.fromDiskCache ? 1 : 0
+                                diagnostics.networkBytes += result.fromDiskCache ? 0 : result.data.count
+                                diagnostics.networkSeconds = Date().timeIntervalSince(networkStarted)
+                                self.morphPreviewDiagnostics = diagnostics
+                            }
+                            gameLog.info(
+                                "Morph preview pack loaded: file=\(result.url.lastPathComponent, privacy: .public) bytes=\(result.data.count, privacy: .public) source=\(result.fromDiskCache ? "disk-cache" : "network", privacy: .public) elapsed_ms=\(Int(result.elapsed * 1000), privacy: .public)"
+                            )
+                        case .failure(let url, let error):
+                            firstError = firstError ?? error
+                            gameLog.error("Morph preview pack failed: file=\(url.lastPathComponent, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+                            group.cancelAll()
+                        }
                     }
-                    newPacks[url] = data
                 }
-                guard generation == self.morphPreviewGeneration else { return }
+                guard generation == self.morphPreviewGeneration, !Task.isCancelled else { return }
+                if let error = firstError {
+                    if var diagnostics = self.morphPreviewDiagnostics {
+                        diagnostics.isLoading = false
+                        diagnostics.errorMessage = error.localizedDescription
+                        self.morphPreviewDiagnostics = diagnostics
+                    }
+                    return
+                }
                 newPacks.forEach { self.morphPreviewPackData[$0.key] = $0.value }
+                if var diagnostics = self.morphPreviewDiagnostics {
+                    diagnostics.isLoading = false
+                    diagnostics.networkSeconds = pendingURLs.isEmpty
+                        ? 0
+                        : Date().timeIntervalSince(networkStarted)
+                    self.morphPreviewDiagnostics = diagnostics
+                }
+                gameLog.info(
+                    "Morph preview packs ready: packs=\(packURLs.count, privacy: .public) loaded_bytes=\(self.morphPreviewDiagnostics?.loadedBytes ?? 0, privacy: .public) network_bytes=\(self.morphPreviewDiagnostics?.networkBytes ?? 0, privacy: .public) network_ms=\(Int((self.morphPreviewDiagnostics?.networkSeconds ?? 0) * 1000), privacy: .public)"
+                )
                 if let preview = self.morphPreviewEngine {
                     newPacks.values.forEach(preview.appendMorphPack)
                     self.setMorphPreviewLoadout(source)
@@ -354,9 +511,24 @@ final class GameViewModel: ObservableObject {
                     self.setMorphPreviewLoadout(source)
                 }
             } catch {
-                gameLog.error("Morph preview load failed: \(error.localizedDescription, privacy: .public)")
+                if generation == self.morphPreviewGeneration {
+                    if var diagnostics = self.morphPreviewDiagnostics {
+                        diagnostics.isLoading = false
+                        diagnostics.errorMessage = error.localizedDescription
+                        self.morphPreviewDiagnostics = diagnostics
+                    }
+                    gameLog.error("Morph preview load failed: \(error.localizedDescription, privacy: .public)")
+                }
             }
         }
+        morphPreviewTask = task
+    }
+
+    func recordMorphPreviewGPUUpload(seconds: TimeInterval) {
+        guard var diagnostics = morphPreviewDiagnostics else { return }
+        diagnostics.gpuSeconds = seconds
+        morphPreviewDiagnostics = diagnostics
+        gameLog.info("Morph preview GPU upload complete: seconds=\(seconds, privacy: .public)")
     }
 
     func setMove(strafe: Float, forward: Float) {

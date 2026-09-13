@@ -1,4 +1,5 @@
 import Combine
+import Foundation
 import OSLog
 import SwiftUI
 
@@ -71,6 +72,17 @@ struct MorphSelectionView: View {
 
     private var activeGroup: MorphAssetGroup? {
         assetGroups.first { $0.id == selectedKind } ?? assetGroups.first
+    }
+
+    private var selectedPreviewPresetIndex: Int {
+        guard let presetID = appearance.draftPresetId,
+              let index = appearance.presets.firstIndex(where: { $0.id == presetID }) else { return 0 }
+        return index
+    }
+
+    private var selectedPreviewThumbnailPath: String? {
+        guard let presetID = appearance.draftPresetId else { return nil }
+        return appearance.presets.first(where: { $0.id == presetID })?.thumbnail
     }
 
     private var editorCategories: [MorphEditorCategory] {
@@ -236,6 +248,7 @@ struct MorphSelectionView: View {
                     engine: engine,
                     isActive: true,
                     avatarPreviewMode: true,
+                    onMorphUploadComplete: { gameModel.recordMorphPreviewGPUUpload(seconds: $0) },
                     onMoveChanged: { gameModel.morphPreviewMoveChanged(to: $0) },
                     onMoveEnded: { gameModel.morphPreviewMoveEnded() },
                     onLookChanged: { gameModel.morphPreviewLookChanged(to: $0) },
@@ -246,11 +259,26 @@ struct MorphSelectionView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
                     .transition(.opacity)
             } else {
-                VStack(spacing: 14) {
-                    ProgressView().tint(.white)
-                    Text("Building your morph…")
-                        .font(.system(size: 14, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.72))
+                ZStack {
+                    if let thumbnail = selectedPreviewThumbnailPath {
+                        morphThumbnail(path: thumbnail, fallbackIndex: selectedPreviewPresetIndex)
+                            .frame(maxHeight: 250)
+                            .padding(.horizontal, 72)
+                            .padding(.vertical, 18)
+                            .opacity(0.86)
+                    }
+                    VStack {
+                        Spacer()
+                        HStack(spacing: 8) {
+                            ProgressView().tint(.white)
+                            Text("Building your morph…")
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.white.opacity(0.78))
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.black.opacity(0.38), in: Capsule())
+                    }
                 }
             }
 
@@ -272,6 +300,9 @@ struct MorphSelectionView: View {
                         .background(.black.opacity(0.28), in: Capsule())
                         .allowsHitTesting(false)
                     Spacer()
+                    if let diagnostics = gameModel.morphPreviewDiagnostics {
+                        morphDiagnosticsBadge(diagnostics)
+                    }
                 }
                 Spacer()
                 HStack(alignment: .bottom) {
@@ -295,6 +326,36 @@ struct MorphSelectionView: View {
         .shadow(color: .black.opacity(0.30), radius: 24, y: 14)
         .scaleEffect(appeared || reduceMotion ? 1 : 0.97)
         .opacity(appeared || reduceMotion ? 1 : 0)
+    }
+
+    private func morphDiagnosticsBadge(_ diagnostics: MorphPreviewDiagnostics) -> some View {
+        let status = diagnostics.errorMessage == nil
+            ? (diagnostics.gpuSeconds == nil ? "…" : "✓")
+            : "!"
+        let gpu = diagnostics.gpuSeconds.map(formatPreviewSeconds) ?? "—"
+        let cache = diagnostics.cacheHits > 0 ? " · cache \(diagnostics.cacheHits)" : ""
+        return VStack(alignment: .trailing, spacing: 1) {
+            Text("\(status) \(diagnostics.completedPacks)/\(diagnostics.totalPacks) packs · \(formatPreviewBytes(diagnostics.loadedBytes))\(cache)")
+            Text("net \(formatPreviewBytes(diagnostics.networkBytes)) / \(formatPreviewSeconds(diagnostics.networkSeconds)) · gpu \(gpu)")
+        }
+        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+        .foregroundStyle(.white.opacity(0.80))
+        .multilineTextAlignment(.trailing)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(.black.opacity(0.34), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .allowsHitTesting(false)
+        .accessibilityLabel("Morph preview loading diagnostics")
+        .accessibilityValue("\(diagnostics.completedPacks) of \(diagnostics.totalPacks) packs, \(formatPreviewBytes(diagnostics.loadedBytes)), network \(formatPreviewSeconds(diagnostics.networkSeconds)), GPU \(gpu)")
+    }
+
+    private func formatPreviewBytes(_ bytes: Int) -> String {
+        if bytes < 1_000_000 { return "\(max(0, bytes / 1_000)) KB" }
+        return String(format: "%.1f MB", Double(bytes) / 1_000_000)
+    }
+
+    private func formatPreviewSeconds(_ seconds: TimeInterval) -> String {
+        String(format: "%.1fs", seconds)
     }
 
     private var stageScenery: some View {

@@ -1,3 +1,4 @@
+import Foundation
 import MetalKit
 import OSLog
 import SwiftUI
@@ -9,6 +10,7 @@ struct RustGameSurface: UIViewRepresentable {
     let engine: EngineBridge
     let isActive: Bool
     var avatarPreviewMode: Bool = false
+    var onMorphUploadComplete: (TimeInterval) -> Void = { _ in }
     var onMoveChanged: (CGSize) -> Void = { _ in }
     var onMoveEnded: () -> Void = {}
     var onLookChanged: (CGSize) -> Void = { _ in }
@@ -54,10 +56,13 @@ struct RustGameSurface: UIViewRepresentable {
         private var lastViewportDescription = ""
         private var lastDrawableSize = CGSize.zero
         private var avatarPreviewMode = false
+        private var morphUploadReporter: (TimeInterval) -> Void = { _ in }
+        private var morphUploadStartedAt: TimeInterval?
 
         func update(_ surface: RustGameSurface, view: InteractiveGameView) {
             engine = surface.engine
             avatarPreviewMode = surface.avatarPreviewMode
+            morphUploadReporter = surface.onMorphUploadComplete
             view.isPaused = !surface.isActive
             view.onViewportChange = { [weak self] size, scale, safeArea in
                 let description = "\(Int(size.width))x\(Int(size.height)) @\(scale), safe=\(Int(safeArea.top))/\(Int(safeArea.right))/\(Int(safeArea.bottom))/\(Int(safeArea.left))"
@@ -131,6 +136,7 @@ struct RustGameSurface: UIViewRepresentable {
             packageImagesEngine = nil
             uploadedMorphPackVersion = -1
             uploadedMorphPackCount = 0
+            morphUploadStartedAt = nil
             engine = nil
         }
 
@@ -172,10 +178,15 @@ struct RustGameSurface: UIViewRepresentable {
             if engineChanged {
                 uploadedMorphPackVersion = -1
                 uploadedMorphPackCount = 0
+                morphUploadStartedAt = nil
             }
             let needsMorphs = engineChanged || uploadedMorphPackVersion != engine.morphPackVersion
             let uploadedImages = !needsImages || engine.uploadPackageImageAtlas(to: renderer)
             let previousMorphPackCount = uploadedMorphPackCount
+            let shouldMeasureMorphUpload = needsMorphs && engine.morphPackCount > uploadedMorphPackCount
+            if shouldMeasureMorphUpload, morphUploadStartedAt == nil {
+                morphUploadStartedAt = Date().timeIntervalSinceReferenceDate
+            }
             if needsMorphs {
                 uploadedMorphPackCount = engine.uploadMorphPacks(
                     to: renderer,
@@ -188,6 +199,12 @@ struct RustGameSurface: UIViewRepresentable {
             if needsMorphs && !uploadedMorphs { rustSurfaceLog.error("Morph pack upload failed") }
             if registeredNewMorphs && !engine.refreshLocalAppearanceAfterMorphPackUpload() {
                 rustSurfaceLog.error("Morph appearance refresh after pack upload failed")
+            }
+            if shouldMeasureMorphUpload && uploadedMorphs {
+                let now = Date().timeIntervalSinceReferenceDate
+                let elapsed = now - (morphUploadStartedAt ?? now)
+                morphUploadStartedAt = nil
+                morphUploadReporter(max(0, elapsed))
             }
             if uploadedImages && uploadedMorphs {
                 packageImagesEngine = engine
