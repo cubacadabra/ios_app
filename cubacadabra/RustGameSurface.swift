@@ -189,6 +189,8 @@ struct RustGameSurface: UIViewRepresentable {
             if engineChanged {
                 uploadedMorphPackVersion = -1
                 uploadedMorphPackCount = 0
+                uploadedWorldModelVersion = -1
+                engine.clearWorldModels(from: renderer)
                 morphUploadStartedAt = nil
             }
             let needsMorphs = engineChanged || uploadedMorphPackVersion != engine.morphPackVersion

@@ -293,6 +293,7 @@ uint8_t engine_renderer_register_world_mesh(
     const uint8_t *bytes,
     uintptr_t length
 );
+void engine_renderer_clear_world_meshes(CubacadabraRenderer *renderer);
 uint8_t engine_renderer_set_avatar_preview_mode(
     CubacadabraRenderer *renderer,
     uint8_t enabled

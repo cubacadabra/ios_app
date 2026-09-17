@@ -270,6 +270,10 @@ final class EngineBridge {
         worldModelVersion &+= 1
     }
 
+    func clearWorldModels(from renderer: OpaquePointer) {
+        engine_renderer_clear_world_meshes(renderer)
+    }
+
     @discardableResult
     func uploadWorldModels(to renderer: OpaquePointer) -> Bool {
         for model in worldModels {
