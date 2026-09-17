@@ -411,36 +411,39 @@ struct MorphSelectionView: View {
             categoryStrip
                 .padding(.top, 12)
 
-            VStack(alignment: .leading, spacing: 0) {
-                Group {
-                    if appearance.isLoading {
-                        HStack(spacing: 12) {
-                            ProgressView()
-                            Text("Loading morphs…")
-                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Group {
+                        if appearance.isLoading {
+                            HStack(spacing: 12) {
+                                ProgressView()
+                                Text("Loading morphs…")
+                                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            }
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, minHeight: 190)
+                        } else if tab == 0 {
+                            starterList
+                        } else {
+                            customizeList
                         }
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, minHeight: 190)
-                    } else if tab == 0 {
-                        starterList
-                    } else {
-                        customizeList
+                    }
+                    .padding(.top, 16)
+
+                    if let feedback = appearance.feedback {
+                        Label(
+                            feedback.message,
+                            systemImage: feedback.kind == .error ? "exclamationmark.circle.fill" : "checkmark.circle.fill"
+                        )
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundStyle(feedback.kind == .error ? Color.red : Color.green)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 14)
                     }
                 }
-                .padding(.top, 16)
-
-                if let feedback = appearance.feedback {
-                    Label(
-                        feedback.message,
-                        systemImage: feedback.kind == .error ? "exclamationmark.circle.fill" : "checkmark.circle.fill"
-                    )
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundStyle(feedback.kind == .error ? Color.red : Color.green)
-                    .padding(.horizontal, 20)
-                    .padding(.top, 14)
-                }
+                .padding(.bottom, 16)
             }
-            .padding(.bottom, 16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(Color(.systemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
