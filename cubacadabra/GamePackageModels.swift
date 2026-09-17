@@ -37,6 +37,7 @@ struct GameAssets: Decodable {
     let audio: [String: GameAudioAssetDefinition]?
     let images: [String: GameImageAssetDefinition]?
     let morphPacks: [String: GameMorphPackDefinition]?
+    let models: [String: GameModelAssetDefinition]?
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -76,9 +77,21 @@ struct GameAssets: Decodable {
         } else {
             morphPacks = nil
         }
+        if container.contains(.models) {
+            guard try !container.decodeNil(forKey: .models) else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .models,
+                    in: container,
+                    debugDescription: "Game manifest assets.models must be an object."
+                )
+            }
+            models = try container.decode([String: GameModelAssetDefinition].self, forKey: .models)
+        } else {
+            models = nil
+        }
     }
 
-    private enum CodingKeys: String, CodingKey { case audio, images, morphPacks }
+    private enum CodingKeys: String, CodingKey { case audio, images, morphPacks, models }
 }
 
 struct GameAudioAssetDefinition: Decodable {
@@ -106,6 +119,10 @@ struct GameImageAssetDefinition: Decodable {
 }
 
 struct GameMorphPackDefinition: Decodable {
+    let path: String
+}
+
+struct GameModelAssetDefinition: Decodable {
     let path: String
 }
 
@@ -340,6 +357,7 @@ enum GamePackageError: LocalizedError {
     case invalidAudioAsset(String)
     case invalidImageAsset(String), tooManyImageAssets, imageAtlasTooLarge, imageAtlasEncodingFailed
     case invalidMorphPack(String), tooManyMorphPacks, morphPackResidencyTooLarge
+    case invalidWorldModel(String), tooManyWorldModels
 
     var errorDescription: String? {
         switch self {
@@ -358,6 +376,8 @@ enum GamePackageError: LocalizedError {
         case .invalidMorphPack(let id): return "The game morph pack \"\(id)\" is invalid."
         case .tooManyMorphPacks: return "This game declares too many morph packs."
         case .morphPackResidencyTooLarge: return "The game morph packs exceed the renderer residency limit."
+        case .invalidWorldModel(let id): return "The game world model \"\(id)\" is invalid."
+        case .tooManyWorldModels: return "This game declares too many world models."
         }
     }
 }

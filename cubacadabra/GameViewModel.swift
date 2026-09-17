@@ -715,6 +715,7 @@ final class GameViewModel: ObservableObject {
         )
         loadedEngine.setPackageImageAtlas(imageAtlas)
         loadedEngine.setMorphPacks(loaded.morphPacks.map(\.data))
+        loadedEngine.setWorldModels(loaded.models)
         loadedEngine.setIgnoredPlayerIDs(blockedPlayerIDs)
         loadedEngine.setAuthenticated(accountSession.accountID != nil)
         applyAccountAppearance(to: loadedEngine)

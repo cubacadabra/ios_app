@@ -53,6 +53,7 @@ struct RustGameSurface: UIViewRepresentable {
         private var packageImagesEngine: EngineBridge?
         private var uploadedMorphPackVersion = -1
         private var uploadedMorphPackCount = 0
+        private var uploadedWorldModelVersion = -1
         private var lastViewportDescription = ""
         private var lastDrawableSize = CGSize.zero
         private var avatarPreviewMode = false
@@ -112,6 +113,15 @@ struct RustGameSurface: UIViewRepresentable {
                 surface.engine.setAvatarPreviewMode(surface.avatarPreviewMode, renderer: renderer)
             }
             uploadPackageImagesIfNeeded()
+            if !avatarPreviewMode && uploadedWorldModelVersion != surface.engine.worldModelVersion {
+                if let renderer {
+                    if surface.engine.uploadWorldModels(to: renderer) {
+                        uploadedWorldModelVersion = surface.engine.worldModelVersion
+                    } else {
+                        rustSurfaceLog.error("world model upload failed")
+                    }
+                }
+            }
             syncEngine()
         }
 
@@ -136,6 +146,7 @@ struct RustGameSurface: UIViewRepresentable {
             packageImagesEngine = nil
             uploadedMorphPackVersion = -1
             uploadedMorphPackCount = 0
+            uploadedWorldModelVersion = -1
             morphUploadStartedAt = nil
             engine = nil
         }

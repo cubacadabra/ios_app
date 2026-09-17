@@ -50,12 +50,15 @@ struct GamePackageLoader {
     private static let maximumImageAssetBytes = 8 * 1024 * 1024
     private static let maximumMorphPackBytes = 64 * 1024 * 1024
     private static let maximumMorphResidentBytes = 16 * 1024 * 1024
+    private static let maximumModelAssetBytes = 16 * 1024 * 1024
     private static let audioIDPattern = "^[A-Za-z0-9._-]{1,64}$"
     private static let audioPathPattern = "^assets/(?:[A-Za-z0-9_-][A-Za-z0-9._-]*/)*[A-Za-z0-9_-][A-Za-z0-9._-]*\\.wav$"
     private static let imageIDPattern = "^[A-Za-z0-9._-]{1,64}$"
     private static let imagePathPattern = "^assets/(?:[A-Za-z0-9_-][A-Za-z0-9._-]*/)*[A-Za-z0-9_-][A-Za-z0-9._-]*\\.(?:png|jpe?g)$"
     private static let morphIDPattern = "^[a-z0-9-]+:[a-z0-9_-]+(?:/[a-z0-9_-]+)*\\.v[1-9][0-9]*$"
     private static let morphPathPattern = "^assets/(?:[A-Za-z0-9_-][A-Za-z0-9._-]*/)*[A-Za-z0-9_-][A-Za-z0-9._-]*\\.morphpack$"
+    private static let modelIDPattern = "^[A-Za-z0-9._-]{1,64}$"
+    private static let modelPathPattern = "^assets/(?:[A-Za-z0-9_-][A-Za-z0-9._-]*/)*[A-Za-z0-9_-][A-Za-z0-9._-]*\\.glb$"
 
     func load(
         gameID: String = "first-game",
@@ -312,6 +315,7 @@ struct GamePackageLoader {
             audioAssets: audioAssets,
             imageAssets: [:],
             morphPacks: [],
+            models: [],
             version: GamePackageVersion(manifestObject?["version"] as? String)
         )
     }
@@ -380,6 +384,7 @@ struct GamePackageLoader {
                 baseURL: baseURL,
                 additionalMorphPackURLs: additionalMorphPackURLs
             ),
+            models: try await loadWorldModels(from: loaded, baseURL: baseURL),
             version: loaded.version
         )
         try await verifyPackageContents(result, baseURL: baseURL)
@@ -506,6 +511,44 @@ struct GamePackageLoader {
         }
     }
 
+    private func loadWorldModels(
+        from loaded: LoadedGamePackage,
+        baseURL: URL
+    ) async throws -> [LoadedGameModel] {
+        let definitions = loaded.package.assets?.models ?? [:]
+        guard definitions.count <= 64 else { throw GamePackageError.tooManyWorldModels }
+        let modelIDPattern = Self.modelIDPattern
+        let modelPathPattern = Self.modelPathPattern
+        let maximumModelAssetBytes = Self.maximumModelAssetBytes
+        return try await withThrowingTaskGroup(of: LoadedGameModel.self) { group in
+            for (id, definition) in definitions {
+                group.addTask {
+                    guard id.range(of: modelIDPattern, options: .regularExpression) != nil,
+                          definition.path.range(of: modelPathPattern, options: [.regularExpression, .caseInsensitive]) != nil,
+                          let url = URL(string: definition.path, relativeTo: baseURL)?.absoluteURL else {
+                        throw GamePackageError.invalidWorldModel(id)
+                    }
+                    let data: Data
+                    if url.isFileURL {
+                        guard let fileData = try? Data(contentsOf: url) else {
+                            throw GamePackageError.invalidWorldModel(id)
+                        }
+                        data = fileData
+                    } else {
+                        data = try await self.fetch(url, maximumBytes: maximumModelAssetBytes)
+                    }
+                    guard !data.isEmpty, data.count <= maximumModelAssetBytes else {
+                        throw GamePackageError.invalidWorldModel(id)
+                    }
+                    return LoadedGameModel(id: id, data: data)
+                }
+            }
+            var models: [LoadedGameModel] = []
+            for try await model in group { models.append(model) }
+            return models.sorted { $0.id < $1.id }
+        }
+    }
+
     private func remoteBaseURL(for gameID: String) -> URL {
         ClientConfiguration.gameBaseURL(for: gameID)
     }
@@ -554,6 +597,7 @@ struct LoadedGamePackage {
     let audioAssets: [String: LoadedGameAudioAsset]
     let imageAssets: [String: LoadedGameImageAsset]
     let morphPacks: [LoadedGameMorphPack]
+    let models: [LoadedGameModel]
     let version: GamePackageVersion?
 }
 
@@ -562,6 +606,11 @@ struct LoadedGameImageAsset {
 }
 
 struct LoadedGameMorphPack {
+    let data: Data
+}
+
+struct LoadedGameModel {
+    let id: String
     let data: Data
 }
 

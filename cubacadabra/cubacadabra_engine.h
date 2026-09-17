@@ -286,6 +286,13 @@ uint8_t engine_renderer_register_morph_pack(
     const uint8_t *bytes,
     uintptr_t length
 );
+/* Decodes and registers a bounded embedded GLB world mesh. */
+uint8_t engine_renderer_register_world_mesh(
+    CubacadabraRenderer *renderer,
+    const char *id,
+    const uint8_t *bytes,
+    uintptr_t length
+);
 uint8_t engine_renderer_set_avatar_preview_mode(
     CubacadabraRenderer *renderer,
     uint8_t enabled

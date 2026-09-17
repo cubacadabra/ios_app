@@ -53,6 +53,8 @@ final class EngineBridge {
     private let handle: OpaquePointer
     private var packageImageAtlas: GameImageAtlas?
     private var morphPacks: [Data] = []
+    private var worldModels: [LoadedGameModel] = []
+    private(set) var worldModelVersion = 0
     private var localAppearanceSource: String?
     private(set) var morphPackVersion = 0
 
@@ -261,6 +263,29 @@ final class EngineBridge {
         guard !morphPacks.contains(pack) else { return }
         morphPacks.append(pack)
         morphPackVersion += 1
+    }
+
+    func setWorldModels(_ models: [LoadedGameModel]) {
+        worldModels = models
+        worldModelVersion &+= 1
+    }
+
+    @discardableResult
+    func uploadWorldModels(to renderer: OpaquePointer) -> Bool {
+        for model in worldModels {
+            let accepted = model.data.withUnsafeBytes { buffer in
+                model.id.withCString { id in
+                    engine_renderer_register_world_mesh(
+                        renderer,
+                        id,
+                        buffer.bindMemory(to: UInt8.self).baseAddress,
+                        UInt(model.data.count)
+                    ) != 0
+                }
+            }
+            if !accepted { return false }
+        }
+        return true
     }
 
     var morphPackCount: Int { morphPacks.count }
