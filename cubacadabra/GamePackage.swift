@@ -45,7 +45,10 @@ struct GamePackageLoader {
     // Release selection below also keeps an equal-version cache from masking
     // the package shipped in a newer app build.
     private static let cachedPackageKeyPrefix = "cubacadabra.cached-package.v5."
-    private static let maximumManifestBytes = 512_000
+    // The backend permits generated runtime manifests up to 64 MiB. Maze 101
+    // can reach that size because its baked collision geometry is inlined in
+    // the manifest, so keep the host limit aligned with the package contract.
+    private static let maximumManifestBytes = 64 * 1024 * 1024
     private static let maximumScriptBytes = 512_000
     private static let maximumImageAssetBytes = 8 * 1024 * 1024
     private static let maximumMorphPackBytes = 64 * 1024 * 1024
