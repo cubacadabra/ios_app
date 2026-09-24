@@ -322,6 +322,7 @@ struct LaunchPadDefinition: Decodable, Identifiable {
 struct BlockDefinition: Decodable {
     let position: [Float]
     let size: [Float]
+    let rotation: [Float]
     let color: String
     let outline: Bool
 
@@ -329,11 +330,12 @@ struct BlockDefinition: Decodable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         position = try container.decode([Float].self, forKey: .position)
         size = try container.decode([Float].self, forKey: .size)
+        rotation = try container.decodeIfPresent([Float].self, forKey: .rotation) ?? [0, 0, 0]
         color = try container.decode(String.self, forKey: .color)
         outline = try container.decodeIfPresent(Bool.self, forKey: .outline) ?? true
     }
 
-    private enum CodingKeys: String, CodingKey { case position, size, color, outline }
+    private enum CodingKeys: String, CodingKey { case position, size, rotation, color, outline }
 }
 
 enum JSONValue: Decodable {
